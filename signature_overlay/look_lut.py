@@ -389,15 +389,20 @@ def forest_gain_at(look, t):
     return _key_at(fb["keys"], t)
 
 
-def forest_boost(rgb, gain, green_extra=1.5):
+def forest_boost(rgb, gain, green_extra=1.5, dark_taper=None):
+    """dark_taper [lo, hi]: the very darkest specks (below lo, mostly camera noise) get little of the
+    gain, easing to the full gain at hi, so the boost doesn't turn noise into grain."""
     g = _smoothstep(0.0, 0.02, rgb[..., 1] - rgb[..., 0])
-    return np.clip(rgb * (gain ** (1 + (green_extra - 1) * g))[..., None], 0, 1)
+    k = gain ** (1 + (green_extra - 1) * g)
+    if dark_taper:
+        k = 1 + (k - 1) * _smoothstep(dark_taper[0], dark_taper[1], rgb @ LUMA709)
+    return np.clip(rgb * k[..., None], 0, 1)
 
 
-def write_boost_cube(path, gain, green_extra=1.5, size=33):
+def write_boost_cube(path, gain, green_extra=1.5, size=33, dark_taper=None):
     x = np.linspace(0, 1, size)
     bb, gg, rr = np.meshgrid(x, x, x, indexing="ij")
-    out = forest_boost(np.stack([rr, gg, bb], -1).reshape(-1, 3), gain, green_extra)
+    out = forest_boost(np.stack([rr, gg, bb], -1).reshape(-1, 3), gain, green_extra, dark_taper)
     with open(path, "w", encoding="ascii") as f:
         f.write(f'TITLE "forest boost x{gain:.3f}"\nLUT_3D_SIZE {size}\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n')
         np.savetxt(f, out, fmt="%.6f")

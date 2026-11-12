@@ -357,8 +357,8 @@ def write_cube_job(job):
 def forest_matte(mt, pw, ph, work_w=480):
     """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the darker forest, same size and
     format. Darkness, blurred; then, unblurred: not sunlit-warm, not sky, and in the top of the
-    picture ("top" range) only greens, so a tall evergreen is boosted evenly from top to bottom while
-    the shaded rock under the peak is not. (A plain fade-in from the top split the trees in two:
+    picture ("top" range) only greens or dark things (backlit treetops are tinted warm, not green),
+    so a tall evergreen is boosted evenly from top to bottom while the shaded rock under the peak is not. (A plain fade-in from the top split the trees in two:
     dark tops, bright lower halves.) See look_lut forest_boost."""
     d0, d1 = mt.get("dark", (0.40, 0.60))
     t0, t1 = mt.get("top", (0.22, 0.42))
@@ -373,6 +373,7 @@ def forest_matte(mt, pw, ph, work_w=480):
             f"st(6,clip((ld(3)-{s0})/{s1 - s0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));"
             f"st(7,clip((Y/H-{t0})/{t1 - t0},0,1));st(7,ld(7)*ld(7)*(3-2*ld(7)));"
             "st(8,clip((ld(1)-ld(0))/0.02,0,1));st(8,ld(8)*ld(8)*(3-2*ld(8)));"
+            "st(9,clip((ld(3)-0.20)/0.10,0,1));st(8,max(ld(8),1-ld(9)*ld(9)*(3-2*ld(9))));"
             "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)*(ld(7)+(1-ld(7))*ld(8))")
     return (f"scale={work_w}:{wh}:flags=area,format=gbrp16le,split[fq][fk];"
             f"[fq]geq=r='{q}':g='{q}':b='{q}',gblur=sigma={sigma:.2f}[fq2];"
@@ -693,6 +694,7 @@ def render(bg, sig, a):
         return "enable='" + "+".join(f"gte(t\\,{wa:.4f})*lt(t\\,{wb:.4f})" for wa, wb in spans) + "'"
 
     shot_lines, noisy = [], []
+    look_sharpen = None
     if a.no_grade:
         grade, grade_note = "", "none, original picture" + (", Dolby Vision kept" if info["dovi"] else "")
     elif a.legacy_grade:
@@ -707,6 +709,7 @@ def render(bg, sig, a):
                      if multi else overview)
             black, white, measured = (0.0, 1.0, None) if a.no_levels else levels_from(lumas, box)
             spec = look_lut.adjust(look_lut.load_look(look), a.hues, a.hue_shift, a.strength)
+            look_sharpen = spec.get("sharpen")
             name = re.sub(r"[^A-Za-z0-9_.-]", "_",
                           f"{bg.stem}{tag}" + (f"_s{i:02d}" if multi else "") + f"_{Path(look).stem}.cube")
             if look_lut.has_time_keys(spec):
@@ -742,7 +745,7 @@ def render(bg, sig, a):
                     for j, ((_, mid), end_b) in enumerate(zip(bsteps, bb)):
                         gain = look_lut.forest_gain_at(spec, mid)
                         bpath = LUT_DIR / f"{Path(name).stem}_b{j:03d}.cube"
-                        look_lut.write_boost_cube(bpath, gain, fb.get("green_extra", 1.5))
+                        look_lut.write_boost_cube(bpath, gain, fb.get("green_extra", 1.5), dark_taper=fb.get("dark_taper"))
                         on = f"gte(t\\,{start_b:.4f})" + (f"*lt(t\\,{end_b:.4f})" if end_b is not None else "")
                         boost_luts.append(f"lut3d=file={bpath.name}:interp=tetrahedral:enable='{on}'")
                         start_b = end_b
@@ -793,7 +796,8 @@ def render(bg, sig, a):
         head = to_rgb
         if boost_luts:
             # Brighten the forest like an exposure increase, only inside its mask, before the grade.
-            head = (f"{to_rgb},split=3[fo][fb][fm];[fb]{','.join(boost_luts)}[fb2];"
+            dn = f"{boost_spec['denoise']}," if boost_spec.get("denoise") else ""
+            head = (f"{to_rgb},split=3[fo][fb][fm];[fb]{dn}{','.join(boost_luts)}[fb2];"
                     f"[fm]{forest_matte(boost_spec.get('matte', {}), pw, ph)}[fm2];[fo][fb2][fm2]maskedmerge")
         if region_luts:
             # Two grades of the same frame, blended through a soft mask of the region.
@@ -801,7 +805,10 @@ def render(bg, sig, a):
                           f"[rgm]{region_matte(region_spec.get('matte', {}), pw, ph)}[rgm2];[rga2][rgb2][rgm2]maskedmerge")
         else:
             graded_rgb = f"{head},{grade}"
-        picture = (f"{graded_rgb},{SHARPEN_RGB},{to_yuv},format=yuv444p16le,{SHARPEN_YUV},"
+        sharp = float(look_sharpen) if look_sharpen is not None else 1.0
+        sharpen_rgb = f"cas=strength={0.4 * sharp:.3f}" if sharp > 0 else "null"
+        sharpen_yuv = (f"unsharp=13:13:{0.3 * sharp:.3f}:13:13:{0.3 * sharp:.3f}" if sharp > 0 else "null")
+        picture = (f"{graded_rgb},{sharpen_rgb},{to_yuv},format=yuv444p16le,{sharpen_yuv},"
                    f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.
