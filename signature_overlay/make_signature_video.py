@@ -354,6 +354,30 @@ def write_cube_job(job):
     return look_lut.write_cube(*job)
 
 
+def region_matte(mt, pw, ph, work_w=480):
+    """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the region, same size and format.
+    Built at work_w wide: warm x bright x top-of-picture, blurred and scaled by gain, then times
+    "not bright-and-neutral" (sky, snow) unblurred so the ridge line stays clean. See look_lut."""
+    w0, w1 = mt.get("warm", (0.0, 0.03))
+    b0, b1 = mt.get("bright", (0.68, 0.80))
+    t0, t1 = mt.get("top", (0.30, 0.50))
+    s0, s1 = mt.get("sky", (0.80, 0.90))
+    sigma = max(0.5, mt.get("blur", 5 / 480) * work_w)
+    gain = mt.get("gain", 1.6)
+    wh = even(work_w * ph / pw)
+    rgb = "st(0,r(X,Y)/65535);st(1,g(X,Y)/65535);st(2,b(X,Y)/65535);st(3,0.2126*ld(0)+0.7152*ld(1)+0.0722*ld(2));"
+    warm = f"st(4,clip((ld(0)-ld(2)-{w0})/{w1 - w0},0,1));st(4,ld(4)*ld(4)*(3-2*ld(4)));"
+    q = (rgb + warm + f"st(5,clip((ld(3)-{b0})/{b1 - b0},0,1));st(5,ld(5)*ld(5)*(3-2*ld(5)));"
+         f"st(6,clip((Y/H-{t0})/{t1 - t0},0,1));st(6,1-ld(6)*ld(6)*(3-2*ld(6)));65535*ld(4)*ld(5)*ld(6)")
+    ns = (rgb + warm + f"st(5,clip((ld(3)-{s0})/{s1 - s0},0,1));st(5,ld(5)*ld(5)*(3-2*ld(5)));"
+          "65535*(1-ld(5)*(1-ld(4)))")
+    return (f"scale={work_w}:{wh}:flags=area,format=gbrp16le,split[mq][mn];"
+            f"[mq]geq=r='{q}':g='{q}':b='{q}',gblur=sigma={sigma:.2f},"
+            f"lutrgb=r='min(val*{gain}\\,maxval)':g='min(val*{gain}\\,maxval)':b='min(val*{gain}\\,maxval)'[mq2];"
+            f"[mn]geq=r='{ns}':g='{ns}':b='{ns}'[mn2];"
+            f"[mq2][mn2]blend=all_mode=multiply,scale={pw}:{ph}:flags=bilinear,format=gbrp16le")
+
+
 def exposure_steps(look, t_from, t_to, rate=15, tol=0.002):
     """The moments (clip seconds) where a look's time keys change enough to need their own LUT:
     checked 15 times a second, a new LUT when a setting moves by more than tol (0.2% of the
@@ -638,7 +662,7 @@ def render(bg, sig, a):
         grade, grade_note = LEGACY_LOOKS[base_look], "legacy per-channel filters"
     else:
         LUT_DIR.mkdir(parents=True, exist_ok=True)
-        luts = []
+        luts, region_luts, region_spec = [], [], None
         for i, (sa, sb, look) in enumerate(segments, 1):
             lumas = (sample_lumas(bg, [t0 + sa + (sb - sa) * f for f in (0.15, 0.4, 0.65, 0.9)], to_rgb, sample)
                      if multi else overview)
@@ -652,15 +676,29 @@ def render(bg, sig, a):
                 steps = exposure_steps(spec, t0, t0 + bg_end)
                 jobs = [(LUT_DIR / f"{Path(name).stem}_x{j:03d}.cube", spec, black, white, 65, mid)
                         for j, (_, mid) in enumerate(steps)]
+                # A region grade needs a second LUT per moment; where it changes nothing, reuse the first.
+                rjobs = []
+                if spec.get("region_grade"):
+                    for j, (_, mid) in enumerate(steps):
+                        if look_lut.region_at(spec, mid) == (0.0, 1.0, 0.0):
+                            rjobs.append((jobs[j][0],))
+                        else:
+                            rjobs.append((LUT_DIR / f"{Path(name).stem}_r{j:03d}.cube", spec, black, white, 65, mid, True))
                 with concurrent.futures.ProcessPoolExecutor() as pool:
-                    list(pool.map(write_cube_job, jobs))
+                    list(pool.map(write_cube_job, jobs + [r for r in rjobs if len(r) > 1]))
                 # One LUT per moment, each switched on only for its own slice of the timeline.
                 bounds = [st - t0 for st, _ in steps[1:]] + [None]
                 start_s = 0.0
-                for (path, *_), end_s in zip(jobs, bounds):
+                for j, ((path, *_), end_s) in enumerate(zip(jobs, bounds)):
                     on = f"gte(t\\,{start_s:.4f})" + (f"*lt(t\\,{end_s:.4f})" if end_s is not None else "")
                     luts.append(f"lut3d=file={path.name}:interp=tetrahedral:enable='{on}'")
+                    if rjobs:
+                        region_luts.append(f"lut3d=file={rjobs[j][0].name}:interp=tetrahedral:enable='{on}'")
                     start_s = end_s
+                if rjobs:
+                    region_spec = spec["region_grade"]
+                    notes.append(f"{spec.get('region_grade', {}).get('name', 'region')} graded separately through a mask "
+                                 f"({sum(len(r) > 1 for r in rjobs)} extra LUTs)")
                 notes.append(f"grade changes over time: {len(steps)} steps between "
                              f"{steps[1][0] - t0 if len(steps) > 1 else 0:.2f} and {steps[-1][0] - t0:.2f} s")
                 levels = (f"levels {black:.3f}-{white:.3f}"
@@ -692,12 +730,20 @@ def render(bg, sig, a):
     # RGB -> 16-bit YUV with the color space stated (untagged clips otherwise fail with
     # "no path between colorspaces"), then dither down to 8-bit.
     to_yuv = "zscale=pin=bt709:tin=bt709:p=bt709:t=bt709:m=bt709:r=tv"
+    if not (graded and region_luts):
+        region_luts = []
     if hdr_out:
         picture = f"format=yuv420p10le,{out_tags}"
     elif a.no_grade:
         picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p,{TAGS}"
     else:
-        picture = (f"{to_rgb},{grade},{SHARPEN_RGB},{to_yuv},format=yuv444p16le,{SHARPEN_YUV},"
+        if region_luts:
+            # Two grades of the same frame, blended through a soft mask of the region.
+            graded_rgb = (f"{to_rgb},split=3[rga][rgb][rgm];[rga]{grade}[rga2];[rgb]{','.join(region_luts)}[rgb2];"
+                          f"[rgm]{region_matte(region_spec.get('matte', {}), pw, ph)}[rgm2];[rga2][rgb2][rgm2]maskedmerge")
+        else:
+            graded_rgb = f"{to_rgb},{grade}"
+        picture = (f"{graded_rgb},{SHARPEN_RGB},{to_yuv},format=yuv444p16le,{SHARPEN_YUV},"
                    f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.

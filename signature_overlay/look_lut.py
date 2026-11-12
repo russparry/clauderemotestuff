@@ -343,15 +343,47 @@ def _key_at(keys, t):
     return float(np.interp(t, a[:, 0], a[:, 1]))
 
 
+# region_grade: a second grade for one area of the frame (e.g. a sunlit peak that the camera
+# washed out), blended in through a soft mask the script builds from each frame:
+#   "keys":  [[t, exposure, color, hue], ...]  an even exposure offset (same code value on R, G, B),
+#            color strength multiplier and hue turn (degrees, minus = toward orange), the same for
+#            every pixel in the area, so its texture is kept. (0, 1, 0) = no change.
+#   "matte": which pixels: warm (red above blue, "warm" range), bright ("bright" range, code
+#            values), in the top of the picture ("top" range, fraction of the height, fading
+#            out), blurred ("blur", fraction of the width) and scaled by "gain"; bright pixels
+#            that aren't warm ("sky" range: sky, snow) are left out, so there's no halo at the ridge.
+def region_at(look, t):
+    rg = look.get("region_grade")
+    if not rg or t is None:
+        return (0.0, 1.0, 0.0)
+    a = np.array(rg["keys"], dtype=float)
+    return tuple(float(np.interp(t, a[:, 0], a[:, i])) for i in (1, 2, 3))
+
+
+def region_adjust(rgb, exposure, color, hue):
+    out = np.clip(rgb + exposure, 0, 1)
+    if color != 1:
+        y = out @ LUMA709
+        out = np.clip(y[..., None] + (out - y[..., None]) * color, 0, 1)
+    if hue:
+        lab = linear_to_oklab(srgb_decode(out))
+        c, s_ = np.cos(np.radians(hue)), np.sin(np.radians(hue))
+        lab = np.stack([lab[..., 0], lab[..., 1] * c - lab[..., 2] * s_, lab[..., 1] * s_ + lab[..., 2] * c], -1)
+        out = np.clip(srgb_encode(fit_gamut(lab)), 0, 1)
+    return out
+
+
 def has_time_keys(look):
-    return any(look.get(k) for k in TIME_KEYS) or bool((look.get("warm_highlights") or {}).get("strength_keys"))
+    return (any(look.get(k) for k in TIME_KEYS) or bool((look.get("warm_highlights") or {}).get("strength_keys"))
+            or bool((look.get("region_grade") or {}).get("keys")))
 
 
 def moment(look, t):
     """(exposure offset, shadow lift, warm-highlight strength) at clip time t."""
     wh = look.get("warm_highlights") or {}
+    d, k, h = region_at(look, t)
     return (_key_at(look.get("exposure_offsets"), t), _key_at(look.get("shadow_lift_keys"), t),
-            _key_at(wh.get("strength_keys"), t) if wh.get("strength_keys") else 1.0)
+            _key_at(wh.get("strength_keys"), t) if wh.get("strength_keys") else 1.0, d, k - 1, h / 100)
 
 
 def _shift_luma(rgb, y_new):
@@ -408,15 +440,18 @@ def pre_transform(look, t=None):
     return f
 
 
-def write_cube(path, look, black=0.0, white=1.0, size=65, t=None):
+def write_cube(path, look, black=0.0, white=1.0, size=65, t=None, region=False):
     """Bake the look (plus this clip's levels, and the look's pre-grade step at clip time t if it
     has one) into a .cube file."""
     x = np.linspace(0, 1, size)
     bb, gg, rr = np.meshgrid(x, x, x, indexing="ij")              # red varies fastest
     rgb = np.stack([rr, gg, bb], -1).reshape(-1, 3)
-    pre = pre_transform(look if isinstance(look, dict) else load_look(look), t)
+    look_d = look if isinstance(look, dict) else load_look(look)
+    pre = pre_transform(look_d, t)
     if pre is not None:
         rgb = pre(rgb)
+    if region:
+        rgb = region_adjust(rgb, *region_at(look_d, t))
     out = np.clip(grade(rgb, look, black, white), 0, 1)
     name = Path(path).stem if isinstance(look, dict) else Path(str(look)).stem
     name = re.sub(r'[^A-Za-z0-9_. +-]', "_", name)
