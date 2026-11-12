@@ -1,0 +1,68 @@
+{
+  "notes": "DJI D-Log M drone clip, Nov 10 2026 17:11 (shot 9 minutes after the first drone clip): dusk. 0-14 s the last pink-orange alpenglow on a ridge, 15-29 s the drone pans across open pale sky, 30-45 s a dark forested slope with snow in shade. Own look from its hues: alpenglow (hue ~45-55) kept natural: no extra for it, reds/browns around 40 eased to x0.88 so the slopes don't turn red, vibrance 0.5 (the first try had the alpenglow at color 0.18, too orange; this one 0.11-0.13, like the approved gold) (the user found the first clip's peak too orange), sky a touch bluer, evergreens a bit richer; log footage, so the first clip's approved curve, saturation and vibrance. No people, so no skin guard. Sharpening low (dusk shadows are noisy). Camera exposure only drifts (-0.15 at most), so no time keys.",
+  "curve": [
+    [
+      0,
+      0
+    ],
+    [
+      0.05,
+      0.04
+    ],
+    [
+      0.15,
+      0.17
+    ],
+    [
+      0.3,
+      0.355
+    ],
+    [
+      0.45,
+      0.5
+    ],
+    [
+      0.7,
+      0.78
+    ],
+    [
+      0.9,
+      0.95
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "shadows_ab": [
+    -0.002,
+    -0.006
+  ],
+  "highlights_ab": [
+    0,
+    0
+  ],
+  "hue_shifts": [],
+  "chroma_gains": [
+    [
+      40,
+      30,
+      0.88
+    ],
+    [
+      235,
+      35,
+      1.2
+    ],
+    [
+      148,
+      35,
+      1.15
+    ]
+  ],
+  "vibrance": 0.5,
+  "saturation": 1.3,
+  "protect_skin": false,
+  "denoise": false,
+  "sharpen": 0.3
+}
