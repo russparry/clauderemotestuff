@@ -7,7 +7,7 @@ This is the approved, repeatable process for one kind of video:
 3. The scene fades to black while the signature stays bright white.
 4. The signature holds alone on black for 2 s, then the video cuts.
 
-**For a future Claude session:** read this whole file, then run the script below. Don't change the look or placement unless the user asks.
+**For a future Claude session:** read this whole file, then run the script below. Don't change the look or placement unless the user asks. For color grading (with or without the signature), read `GRADING_GUIDE.md` first: it has the user's preferences, the workflow with `grade_tools.py`, and the mistakes to avoid. Grade-only renders (no signature): `--grade-only`.
 
 **Cloud version (since Nov 12 2026).** The user now runs this in Claude Code cloud sessions from the `clauderemotestuff` repo, with no PC involved. The Windows paths below (`C:\Users\russp\Videos\signature_overlay\`, `py`, `%TEMP%`) map to this folder (`signature_overlay/` in the repo), `python3`, and `/tmp`. Clips arrive as Google Drive share links (`fetch_drive.py`), and finished videos go back to the user as files in the Claude app. The repo's `CLAUDE.md` has the step-by-step version. The scripts were recovered from the PC session transcripts; `look_lut.py`'s color-math helpers (sRGB, OKLab, PCHIP, hue bands, gamut edge) were rewritten because those lines were never captured, and they pass the identity (lossless) check.
 

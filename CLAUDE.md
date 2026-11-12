@@ -1,51 +1,51 @@
 # clauderemotestuff
 
-The user works here from Claude Code cloud sessions, often from their phone, and does not
-use their PC for this. Explain choices by what the user will see, not by jargon.
+The user works here from Claude Code cloud sessions, often from their phone, and doesn't use their
+PC for this. Explain choices by what the user will see, not by jargon. They review on their phone
+and often send screenshots with circles: act on exactly what's circled.
 
-## Signature videos (`signature_overlay/`)
+## Color grading and signature videos (`signature_overlay/`)
 
-The user's repeatable video edit: a hand-drawn white signature writes on over their clip, the
-scene fades to black, the signature holds alone on black for 2 s, then the video cuts.
-Output is 2160x3840 (vertical 4K) at the clip's own frame rate. Full process, defaults and
-the reasoning behind every number: `signature_overlay/SIGNATURE_OVERLAY_RECIPE.md`. Read it
-before editing a video.
+Two kinds of jobs:
+- **Color grade only** (most videos): `make_signature_video.py <clip> --grade-only` -> `graded/`,
+  the clip's own frame and sound, no signature or fade.
+- **Signature video**: a hand-drawn white signature writes on, the scene fades to black, the
+  signature holds on black for 2 s; 2160x3840 vertical 4K. Untouched picture unless they ask for
+  color (`--no-grade --keep-audio`).
+
+Read before working:
+- `signature_overlay/GRADING_GUIDE.md`: how to grade any video, the user's preferences, the
+  workflow with `grade_tools.py`, and every mistake made on the Nov 2026 drone clip with its fix.
+- `signature_overlay/SIGNATURE_OVERLAY_RECIPE.md`: signature timing, placement, framing (`--fit`
+  for horizontal clips), HDR handling, and the grading pipeline's internals.
 
 ### Each session
 
-1. Bundled ffmpeg, pinned (skip if `signature_overlay/pylib/` already exists):
-   `python3 -m pip install --quiet --target signature_overlay/pylib "imageio-ffmpeg==0.6.0"`
-   Newer imageio-ffmpeg (0.8.x, ffmpeg 9.0.2) breaks the grade: its 16-bit `unsharp` tints
-   the picture magenta and brightens it. Untouched HDR renders (`--no-grade` on iPhone HDR)
-   also need libx265's Dolby Vision option, which only the newer build has:
-   `python3 -m pip install --quiet --target signature_overlay/pylib_hdr "imageio-ffmpeg==0.8.1"`
-   (the script uses it automatically for those renders only).
-2. Clips come from Google Drive share links ("Anyone with the link"). The session's cloud
-   environment ("clauderemotestuff") allows `drive.google.com` and
-   `drive.usercontent.google.com`:
-   `python3 signature_overlay/fetch_drive.py "<link>"` saves into `signature_overlay/before/`.
-   A folder link fetches every file in it. iCloud links can't be downloaded from a script.
-3. Render with `signature_overlay/make_signature_video.py` (see the recipe for options).
-   Use `--preview --sheet` first when the timing is uncertain, and look at the sheet.
-4. Send the finished `signature_overlay/4k/<clip>_4k.mp4` (and the check sheet) to the user
-   as files in the app. The user saves videos to their phone from the **GitHub app**, so also
-   push a phone copy to the repo's `videos` branch (separate history, no code; public is fine,
-   the user said so for all their videos): `python3 signature_overlay/phone_copy.py <4k file>
-   <videos checkout>/<name>.mp4` makes a 4K HEVC copy under GitHub's 100 MB file limit.
-   GitHub releases can't be created from these sessions (403), so don't try. Keep earlier
-   versions too (copy a render to `4k/versions/` before re-rendering; renders overwrite).
+1. Bundled ffmpeg, pinned (the environment's setup script installs it; if `signature_overlay/pylib/`
+   is missing): `python3 -m pip install --quiet --target signature_overlay/pylib "imageio-ffmpeg==0.6.0"`
+   and, for untouched HDR renders only, `... --target signature_overlay/pylib_hdr "imageio-ffmpeg==0.8.1"`.
+   Newer imageio-ffmpeg (ffmpeg 9.0.2) breaks graded renders (magenta, too bright).
+2. Clips come from Google Drive share links set to "Anyone with the link" (the cloud environment
+   "clauderemotestuff" allows `drive.google.com` and `drive.usercontent.google.com`):
+   `python3 signature_overlay/fetch_drive.py "<link>"` -> `signature_overlay/before/`. A private
+   file asks Google to sign in; the script says so: ask the user to change the sharing.
+3. Grade with `signature_overlay/grade_tools.py` (analyze, stills, keys, check) and render with
+   `make_signature_video.py`; a 26 s 4K60 render with masks takes 15-20 minutes (run it in the
+   background). Previews (`--preview`) hide grain: test the darkest seconds at full size.
+4. Deliver: send the render in the app, and push a phone copy to the repo's `videos` branch
+   (`phone_copy.py`: 4K HEVC under 100 MB; public is fine, the user said so for all their videos).
+   The user downloads from the GitHub app. GitHub releases can't be created from these sessions.
+   Keep earlier versions (`4k/versions/`, `graded/versions/`): renders overwrite. Videos aren't
+   committed to the code branches.
 
 ### The user's standing preferences
 
-- Default is an untouched render: `--no-grade --keep-audio` (HDR and Dolby Vision kept, 4K,
-  normal signature size). Grade only when they ask for color work.
-- When grading, every video gets its own look (`looks/<clip>.json` built from that footage's
-  hues, or `--hues` / `--hue-shift` / `--strength`). `looks/examples/` (summer, fall, dusk)
-  are past projects, reference only, never defaults.
-- Ask for the signature start time if it isn't given ("as late as you can" = `--start latest`).
-- Horizontal (16:9) clips, such as DJI drone footage: ask once whether to fill the vertical frame
-  (crops the sides) or show the whole shot with black bars (`--fit`). For the first one
-  (Nov 2026) they chose the whole shot with bars, "as long as we keep the 4k": the file stays
-  2160x3840.
-- No Instagram exports. No `--ink-shadow` unless asked. Do only what was asked, and ask at
-  most one question, only when the request can't be done as stated.
+- Every video gets its own look from its own hues; `looks/examples/` are references only.
+- Natural over processed: golden light golden with its texture visible, never neon or flat orange.
+- Darker and clean beats bright and grainy. Nothing faded or hazy. No sudden changes over time.
+  No two-toned trees or objects (no position-based rules that cross an object).
+- Standard color (SDR) output; no HDR surprises. Keep 4K.
+- Signature videos: ask for the start time if not given ("as late as you can" = `--start latest`);
+  horizontal clips: ask once, fill the frame or `--fit` (the drone clip used `--fit`, signature
+  shrunk to the picture and centered). No Instagram copies. No `--ink-shadow` unless asked.
+- Do only what was asked; ask at most one question, only when the request can't be done as stated.

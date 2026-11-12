@@ -497,3 +497,68 @@ def write_cube(path, look, black=0.0, white=1.0, size=65, t=None, region=False):
         f.write(f"LUT_3D_SIZE {size}\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n")
         np.savetxt(f, out, fmt="%.6f")
     return path
+
+
+# ---------------------------------------------------------------- masks, as numpy (for stills and tools)
+# These mirror make_signature_video.region_matte / forest_matte (built there as ffmpeg filters at
+# 480 px wide), so grade_tools.py can show what a render will do in seconds instead of minutes.
+def _gblur(img, sigma):
+    r = max(1, int(3 * sigma))
+    x = np.arange(-r, r + 1)
+    k = np.exp(-x ** 2 / (2 * sigma ** 2))
+    k /= k.sum()
+    p = np.pad(img, r, mode="edge")
+    tmp = np.apply_along_axis(lambda v: np.convolve(v, k, mode="valid"), 1, p)
+    return np.apply_along_axis(lambda v: np.convolve(v, k, mode="valid"), 0, tmp)
+
+
+def region_matte_np(rgb, mt):
+    """rgb: (H, W, 3) encoded picture at about 480 px wide. Same rules as region_matte."""
+    H, W = rgb.shape[:2]
+    y = rgb @ LUMA709
+    w0, w1 = mt.get("warm", (0.0, 0.03))
+    warm = _smoothstep(w0, w1, rgb[..., 0] - rgb[..., 2])
+    q = warm * _smoothstep(*mt.get("bright", (0.68, 0.80)), y) * (1 - _smoothstep(*mt.get("top", (0.30, 0.50)), np.arange(H)[:, None] / H))
+    sigma = max(0.5, mt.get("blur", 5 / 480) * W)
+    return np.clip(_gblur(q, sigma) * mt.get("gain", 1.6), 0, 1) * (1 - _smoothstep(*mt.get("sky", (0.80, 0.90)), y) * (1 - warm))
+
+
+def forest_matte_np(rgb, mt):
+    """rgb: (H, W, 3) encoded picture at about 480 px wide. Same rules as forest_matte."""
+    H, W = rgb.shape[:2]
+    y = rgb @ LUMA709
+    d = 1 - _smoothstep(*mt.get("dark", (0.40, 0.60)), y)
+    sigma = max(0.5, mt.get("blur", 6 / 480) * W)
+    warm = _smoothstep(0.0, 0.03, rgb[..., 0] - rgb[..., 2])
+    keep = np.clip(1 - warm * _smoothstep(*mt.get("warm_bright", (0.48, 0.60)), y) - _smoothstep(*mt.get("sky", (0.75, 0.88)), y), 0, 1)
+    if mt.get("top"):
+        top = _smoothstep(*mt["top"], np.arange(H)[:, None] / H)
+        green = np.maximum(_smoothstep(0.0, 0.02, rgb[..., 1] - rgb[..., 0]), 1 - _smoothstep(0.20, 0.30, y))
+        keep = keep * (top + (1 - top) * green)
+    return np.clip(_gblur(d, sigma), 0, 1) * keep
+
+
+def grade_picture(rgb, look, t, black=0.0, white=1.0):
+    """The whole grade for one picture (H, W, 3) at clip time t, as the script renders it, minus
+    sharpening, vignette and denoising: forest boost through its mask, the look (with its moment's
+    pre-grade step), and the region grade through its mask. Encoded RGB in and out."""
+    look = look if isinstance(look, dict) else load_look(look)
+    shape = rgb.shape
+    px = rgb.reshape(-1, 3)
+    fb = look.get("forest_boost")
+    if fb:
+        k = forest_gain_at(look, t)
+        if k != 1:
+            m = forest_matte_np(rgb, fb.get("matte", {})).reshape(-1, 1)
+            px = px + m * (forest_boost(px, k, fb.get("green_extra", 1.5), fb.get("dark_taper")) - px)
+    pre = pre_transform(look, t)
+    base = pre(px) if pre else px
+    out = np.clip(grade(base, look, black, white), 0, 1)
+    rg = look.get("region_grade")
+    if rg:
+        d, kk, h = region_at(look, t)
+        if (d, kk, h) != (0.0, 1.0, 0.0):
+            b = np.clip(grade(region_adjust(base, d, kk, h), look, black, white), 0, 1)
+            m = region_matte_np(rgb, rg.get("matte", {})).reshape(-1, 1)
+            out = out + m * (b - out)
+    return out.reshape(shape)

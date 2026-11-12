@@ -25,7 +25,12 @@ Examples (on Windows, "py" instead of "python3"):
   python3 make_signature_video.py IMG_4406.MOV --start 12.5 --fade-after 1 --preview --sheet
   python3 make_signature_video.py /path/clip.mp4 --from 15 --to 45 --start latest --hues "orange+20,blue+10"
 
-The full recipe (and why each number is what it is) is in SIGNATURE_OVERLAY_RECIPE.md.
+Grade only (no signature, fade or hold; the clip's own frame and sound; output in graded/):
+  python3 make_signature_video.py IMG_4406.MOV --grade-only
+  python3 make_signature_video.py drone.mp4 --grade-only --from 5 --to 30 --preview
+
+The full recipe (and why each number is what it is) is in SIGNATURE_OVERLAY_RECIPE.md; the
+general grading playbook (any video) is in GRADING_GUIDE.md.
 Change the look/placement constants below only on purpose; they are the approved style.
 """
 import argparse
@@ -47,7 +52,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import look_lut  # noqa: E402
 
-BEFORE, OUT_4K = HERE / "before", HERE / "4k"
+BEFORE, OUT_4K, GRADED = HERE / "before", HERE / "4k", HERE / "graded"
 SIGNATURE = HERE / "signature_white_transparent_2x_1.mov"
 VIDEO_EXT = {".mov", ".mp4", ".m4v", ".mkv"}
 PREVIEW_DIR = Path(tempfile.gettempdir()) / "signature_previews"
@@ -563,15 +568,26 @@ def scope_sheet(path, moments, out_png):
 
 def render(bg, sig, a):
     k = 0.25 if a.preview else 1.0
-    W, H = even(OUT_W * k), even(OUT_H * k)
-    tag = (("_reversed" if a.reverse else "") + ("_original" if a.no_grade else "")
-           + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else ""))
-    if a.preview:
-        master = PREVIEW_DIR / f"{bg.stem}{tag}_preview.mp4"
+    info = probe(bg)
+    only = a.grade_only
+    if only:
+        # Grade only: the clip's own frame (landscape stays landscape, 4K stays 4K), no signature,
+        # no fade, sound copied as is.
+        if a.no_grade:
+            sys.exit("--grade-only with --no-grade would change nothing.")
+        W, H = even(info["w"] * k), even(info["h"] * k)
+        tag = "_reversed" if a.reverse else ""
+        master = (PREVIEW_DIR / f"{bg.stem}{tag}_graded_preview.mp4" if a.preview
+                  else GRADED / f"{bg.stem}{tag}_graded.mp4")
     else:
-        master = OUT_4K / f"{bg.stem}{tag}_4k.mp4"
-
-    info, sinfo = probe(bg), probe(sig)
+        W, H = even(OUT_W * k), even(OUT_H * k)
+        tag = (("_reversed" if a.reverse else "") + ("_original" if a.no_grade else "")
+               + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else ""))
+        if a.preview:
+            master = PREVIEW_DIR / f"{bg.stem}{tag}_preview.mp4"
+        else:
+            master = OUT_4K / f"{bg.stem}{tag}_4k.mp4"
+    sinfo = None if only else probe(sig)
     times, bg_end = frame_times(bg)
     trim_in, notes, t0 = [], [], 0.0
     if a.trim_from is not None or a.trim_to is not None:
@@ -594,35 +610,41 @@ def render(bg, sig, a):
         notes.append(f"reversing holds {len(times)} frames in memory, about {need / 1e9:.1f} GB"
                      + (f" ({avail / 1e9:.1f} GB free)" if avail else ""))
     fps = len(times) / bg_end
-    pen_start, pen_stop = pen_times(sig, sinfo)
-    paper, (ix0, iy0, ix1, iy1) = ink_box(sig, sinfo)
+    if only:
+        pen_start = pen_stop = 0.0
+        paper, (ix0, iy0, ix1, iy1) = None, (0, 0, 1, 1)
+    else:
+        pen_start, pen_stop = pen_times(sig, sinfo)
+        paper, (ix0, iy0, ix1, iy1) = ink_box(sig, sinfo)
 
     # Timing. "start" = when ink first appears on screen, in background-clip seconds.
     draw = pen_stop - pen_start
-    if a.start is None:
+    if only:
+        start = 0.0
+    elif a.start is None:
         start = bg_end - DEFAULT_FADE_LEAD - a.fade_after - draw
     elif a.start == "latest":
         # As late as possible: the fade reaches black on the clip's last frame.
         start = times[-1] - a.fade_dur - a.fade_after - draw
     else:
         start = float(a.start)
-    if not 0 <= start < bg_end:
+    if not only and not 0 <= start < bg_end:
         sys.exit(f"--start {start:.2f} is outside the clip (0 to {bg_end:.2f} s).")
     sig_offset = start - pen_start
     pen_done = start + draw
     fade_start = pen_done + a.fade_after
-    total = fade_start + a.fade_dur + a.hold
-    pad_frames = max(0, round((total - bg_end) * fps))
-    if fade_start + a.fade_dur > bg_end:
+    total = bg_end if only else fade_start + a.fade_dur + a.hold
+    pad_frames = 0 if only else max(0, round((total - bg_end) * fps))
+    if not only and fade_start + a.fade_dur > bg_end:
         notes.append(f"clip ends at {bg_end:.2f} s, before the fade finishes; the rest cuts to black")
     # --keep-audio: the music is copied as-is (no fade, no re-encode) and simply stops where
     # the video ends, after the 2 s hold. The hold is never stretched to fit the music.
-    keep_audio = a.keep_audio and bool(info["audio"])
+    keep_audio = (a.keep_audio or only) and bool(info["audio"])
 
     # Placement: turn the signature if asked (its ink box turns with it), then scale it so its
     # ink matches the target box exactly. --ink-box replaces the standard box.
     rot = a.sig_rotate % 360
-    cw, ch = sinfo["w"], sinfo["h"]
+    cw, ch = (1, 1) if only else (sinfo["w"], sinfo["h"])
     if rot == 90:
         ix0, iy0, ix1, iy1, cw, ch = ch - 1 - iy1, ix0, ch - 1 - iy0, ix1, ch, cw
     elif rot == 180:
@@ -658,7 +680,11 @@ def render(bg, sig, a):
     to_rgb = TONEMAP if info["hdr"] else "format=gbrp16le"
     # Framing: fill the 9:16 frame (crop what doesn't fit), or with --fit show the whole picture
     # with black bars. Measurements follow the framing, so they see what the viewer sees.
-    if a.fit:
+    if only:
+        sample = (f"scale=480:{even(480 * info['h'] / info['w'])}", 480, even(480 * info["h"] / info["w"]))
+        pw, ph = W, H
+        place, pad = f"scale={W}:{H}:flags=lanczos", ""
+    elif a.fit:
         sample = (f"scale=480:{even(480 * info['h'] / info['w'])}", 480, even(480 * info["h"] / info["w"]))
         ph = min(H, even(W * info["h"] / info["w"]))
         pw = W if ph < H else even(H * info["w"] / info["h"])
@@ -727,8 +753,9 @@ def render(bg, sig, a):
                             rjobs.append((jobs[j][0],))
                         else:
                             rjobs.append((LUT_DIR / f"{Path(name).stem}_r{j:03d}.cube", spec, black, white, 65, mid, True))
-                with concurrent.futures.ProcessPoolExecutor() as pool:
-                    list(pool.map(write_cube_job, jobs + [r for r in rjobs if len(r) > 1]))
+                if not a.dry_run:                  # a dry run only prints the plan
+                    with concurrent.futures.ProcessPoolExecutor() as pool:
+                        list(pool.map(write_cube_job, jobs + [r for r in rjobs if len(r) > 1]))
                 # One LUT per moment, each switched on only for its own slice of the timeline.
                 bounds = [st - t0 for st, _ in steps[1:]] + [None]
                 start_s = 0.0
@@ -764,7 +791,8 @@ def render(bg, sig, a):
                 if spec.get("denoise"):
                     noisy.append(window(sa, sb))
                 continue
-            look_lut.write_cube(LUT_DIR / name, spec, black, white)
+            if not a.dry_run:
+                look_lut.write_cube(LUT_DIR / name, spec, black, white)
             if spec.get("denoise"):
                 noisy.append(window(sa, sb))
             luts.append(f"lut3d=file={name}:interp=tetrahedral" + (":" + enable([window(sa, sb)]) if multi else ""))
@@ -814,17 +842,20 @@ def render(bg, sig, a):
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.
     prep = "" if native else f"{place},{picture}{pad},"
-    fc = (f"[0:v]{rev}{denoise}{prep}fade=t=out:st={fade_start:.4f}:d={a.fade_dur},"
-          f"tpad=stop={pad_frames}:stop_mode=add:color=black[bg];"
-          + ink_layer(sinfo, paper, sig_offset, sw, sh, a.ink, a.ink_shadow, k, rot, out_tags,
-                      HDR_INK_Y[hdr_out] if hdr_out and a.ink == "white" else None) + ";")
-    if a.ink_shadow:
-        fc += f"[bg][shadow]overlay={ox}:{oy}:eof_action=repeat[bgs];[bgs]"
+    if only:
+        fc = f"[0:v]{rev}{denoise}{prep}null[vm]"
     else:
-        fc += "[bg]"
-    fc += (f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le" if hdr_out
-           else f"[ink]overlay={ox}:{oy}:eof_action=repeat,format=yuv420p")
-    fc += "[vm]"
+        fc = (f"[0:v]{rev}{denoise}{prep}fade=t=out:st={fade_start:.4f}:d={a.fade_dur},"
+              f"tpad=stop={pad_frames}:stop_mode=add:color=black[bg];"
+              + ink_layer(sinfo, paper, sig_offset, sw, sh, a.ink, a.ink_shadow, k, rot, out_tags,
+                          HDR_INK_Y[hdr_out] if hdr_out and a.ink == "white" else None) + ";")
+        if a.ink_shadow:
+            fc += f"[bg][shadow]overlay={ox}:{oy}:eof_action=repeat[bgs];[bgs]"
+        else:
+            fc += "[bg]"
+        fc += (f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le" if hdr_out
+               else f"[ink]overlay={ox}:{oy}:eof_action=repeat,format=yuv420p")
+        fc += "[vm]"
     has_audio = bool(info["audio"])
     if has_audio and not keep_audio:
         fc += (f";[{info['audio']}]{'areverse,' if a.reverse else ''}"
@@ -838,7 +869,7 @@ def render(bg, sig, a):
     tmp_m = master.with_suffix(".tmp.mp4")
     ff = FF_HDR if hdr_out else FF
     cmd = [ff, "-hide_banner", "-loglevel", "warning", "-stats", "-y",
-           *trim_in, "-i", str(bg), "-i", str(sig), "-filter_complex", fc,
+           *trim_in, "-i", str(bg), *([] if only else ["-i", str(sig)]), "-filter_complex", fc,
            "-map", "[vm]",
            *(hdr_enc(hdr_out, "ultrafast" if a.preview else "medium", 24 if a.preview else 16,
                      dovi=info["dovi"] and native) if hdr_out
@@ -849,15 +880,19 @@ def render(bg, sig, a):
     used = f"  (using {trim_in[1]}-{trim_in[3]} s of the clip)" if trim_in else ""
     print(f"background : {info['w']}x{info['h']}  {fps:.3f} fps  {bg_end:.3f} s{used}  "
           f"hdr={info['hdr']}  audio={info['audio']}")
-    print(f"signature  : {sig.name}  {sinfo['w']}x{sinfo['h']}  transparent={sinfo['alpha']}  "
-          f"draws in {draw:.2f} s  ink box {ix0},{iy0}-{ix1},{iy1}")
-    how = " (default)" if a.start is None else " (latest)" if a.start == "latest" else ""
-    print(f"timing     : ink appears {start:.2f} s{how}, "
-          f"pen stops {pen_done:.2f} s, fade {fade_start:.2f}-{fade_start + a.fade_dur:.2f} s, "
-          f"black hold to {total:.2f} s")
-    print(f"placement  : signature scaled to {sw}x{sh} at x={ox} y={oy} in {W}x{H}"
-          + (f", turned {rot} deg clockwise" if rot else "") + ("  + soft shadow" if a.ink_shadow else "")
-          + (f"  (ink box {','.join(map(str, box_4k))})" if tuple(box_4k) != INK_BOX else ""))
+    if only:
+        print(f"mode       : grade only, {W}x{H}, whole {'section' if trim_in else 'clip'} ({total:.2f} s), "
+              f"no signature or fade, sound {'copied as is' if keep_audio else 'none'}")
+    else:
+        print(f"signature  : {sig.name}  {sinfo['w']}x{sinfo['h']}  transparent={sinfo['alpha']}  "
+              f"draws in {draw:.2f} s  ink box {ix0},{iy0}-{ix1},{iy1}")
+        how = " (default)" if a.start is None else " (latest)" if a.start == "latest" else ""
+        print(f"timing     : ink appears {start:.2f} s{how}, "
+              f"pen stops {pen_done:.2f} s, fade {fade_start:.2f}-{fade_start + a.fade_dur:.2f} s, "
+              f"black hold to {total:.2f} s")
+        print(f"placement  : signature scaled to {sw}x{sh} at x={ox} y={oy} in {W}x{H}"
+              + (f", turned {rot} deg clockwise" if rot else "") + ("  + soft shadow" if a.ink_shadow else "")
+              + (f"  (ink box {','.join(map(str, box_4k))})" if tuple(box_4k) != INK_BOX else ""))
     tweaks = "".join(f" {k} {v}" for k, v in (("strength", a.strength), ("hues", a.hues),
                                                 ("hue-shift", a.hue_shift)) if v is not None)
     print("look       : " + (grade_note if a.no_grade else f"{base_look}{tweaks}, {grade_note}")
@@ -881,15 +916,17 @@ def render(bg, sig, a):
     if hdr_out:
         print("\nQC skipped: its targets are for standard-color video, and this output is HDR.")
     else:
-        print("\nQC (picture before the fade" + (", inside the black bars" if qc_box != (0.0, 0.0, 1.0, 1.0) else "") + "):")
-        for line in qc_report(check, fade_start, qc_box):
+        qc_end = total if only else fade_start
+        print("\nQC (" + ("whole picture" if only else "picture before the fade")
+              + (", inside the black bars" if qc_box != (0.0, 0.0, 1.0, 1.0) else "") + "):")
+        for line in qc_report(check, qc_end, qc_box):
             print("  " + line)
     if multi and not hdr_out:
         print("\nPer shot (luma is video range, black 16 / white 235):")
         out_shots = sorted((*window(sa, sb), look) for sa, sb, look in segments)
-        for line in shot_table(check, out_shots, fade_start, qc_box):
+        for line in shot_table(check, out_shots, total if only else fade_start, qc_box):
             print("  " + line)
-    contrast = None if (hdr_out or rot) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k)
+    contrast = None if (hdr_out or rot or only) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k)
     if contrast is not None:
         verdict = "ok  " if contrast >= MIN_INK_CONTRAST or a.ink_shadow else "WARN"
         print(f"  {verdict} signature contrast {contrast:4.1f}:1 against the picture behind it "
@@ -897,18 +934,20 @@ def render(bg, sig, a):
               + ("" if verdict == "ok  " else "; consider --ink-shadow or a different --start"))
 
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-    moments = [1.0, start + draw / 2, pen_done + 0.02, fade_start + a.fade_dur / 2,
-               fade_start + a.fade_dur + 0.5, total - 0.25]
+    moments = ([total * (i + 0.5) / 6 for i in range(6)] if only else
+               [1.0, start + draw / 2, pen_done + 0.02, fade_start + a.fade_dur / 2,
+                fade_start + a.fade_dur + 0.5, total - 0.25])
     if a.sheet:
         sheet = PREVIEW_DIR / f"{bg.stem}{tag}_check.jpg"
         sel = "+".join(f"eq(n\\,{round(t * rate)})" for t in moments)
         subprocess.run([FF, "-v", "error", "-y", "-i", str(check), "-vf",
                         f"select='{sel}',scale=-2:640,tile={len(moments)}x1",
                         "-frames:v", "1", "-q:v", "3", str(sheet)], check=True)
-        print(f"check sheet: {sheet}  (1 s, mid-writing, pen stopped, mid-fade, black hold, end)")
+        print(f"check sheet: {sheet}  " + ("(six moments spread across the clip)" if only else
+                                              "(1 s, mid-writing, pen stopped, mid-fade, black hold, end)"))
     if a.scopes:
         scopes = PREVIEW_DIR / f"{bg.stem}{tag}_scopes.png"
-        scope_sheet(check, [1.0, fade_start / 2, max(start - 0.1, 0)], scopes)
+        scope_sheet(check, [1.0, total / 2, max(total - 1, 0)] if only else [1.0, fade_start / 2, max(start - 0.1, 0)], scopes)
         print(f"scopes     : {scopes}  (frame | waveform | vectorscope at 1 s, middle, before the pen)")
 
 
@@ -986,6 +1025,9 @@ def main():
                     help="no longer needed: --no-grade always keeps an HDR clip HDR, Dolby Vision included")
     ap.add_argument("--keep-audio", action="store_true",
                     help="leave the music untouched: copied as-is with no fade; it stops where the video ends")
+    ap.add_argument("--grade-only", action="store_true",
+                    help="color grade the clip and nothing else: no signature, fade or black hold; the clip's "
+                         "own frame (landscape stays landscape) and sound; output in graded\\")
     ap.add_argument("--no-grade", action="store_true",
                     help="original picture, only the signature and fade added (outputs end in _original)")
     ap.add_argument("--ink", choices=INK_Y, default="white")
@@ -999,14 +1041,16 @@ def main():
     a = ap.parse_args()
 
     sig = Path(a.signature).resolve()
-    if not sig.exists():
+    if not sig.exists() and not a.grade_only:
         sys.exit(f"Signature clip not found: {sig}")
     if a.videos:
         clips = [resolve_video(v) for v in a.videos]
     else:
         clips = sorted(p for p in BEFORE.iterdir() if p.suffix.lower() in VIDEO_EXT)
         if not a.force:
-            clips = [p for p in clips if not (OUT_4K / f"{p.stem}_4k.mp4").exists()]
+            done = (lambda p: (GRADED / f"{p.stem}_graded.mp4").exists()) if a.grade_only else \
+                   (lambda p: (OUT_4K / f"{p.stem}_4k.mp4").exists())
+            clips = [p for p in clips if not done(p)]
         if not clips:
             sys.exit(f"Nothing to do: no unedited videos in {BEFORE}.")
     if len(clips) > 1 and (a.start is not None or a.trim_from is not None or a.trim_to is not None
