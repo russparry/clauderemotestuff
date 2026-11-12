@@ -5,6 +5,7 @@ tap a file, download it, then Share -> Save Video.
 
 Color graded only (landscape, 3840x2160):
 - `drone_dusk_graded.mp4`: the dusk drone clip (alpenglow on the peaks, sky pan, dark forest with snow).
+- `drone_dusk_vivid_cool.mp4`: the same clip, more vivid and cooler: bluer sky, greener pines, cool shade and snow; the gold on the peaks unchanged.
 
 Signature videos (vertical, 2160x3840):
 - `drone_mountain_final.mp4`: the latest version (mountain graded separately while the camera washes it out; the forest kept darker and clean, no grain, every tree one even tone).
