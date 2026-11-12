@@ -39,6 +39,7 @@ import numpy as np
 #   vibrance       boosts dull colors more than vivid ones (0 = off)
 #   saturation     overall color strength multiplier
 #   denoise        true = light noise reduction first (for pushed low-light footage)
+#   exposure_keys  steady exposure over time, for auto-exposure changes (see "steady exposure")
 #   protect_skin   false = no skin guard, for footage with no people (golden light on rock or
 #                  foliage sits in the skin hue band and would otherwise be held back)
 #   strength       how much of the look to use: 0.7 = 70% (subtle), 1 = full (default)
@@ -310,11 +311,65 @@ def fit_gamut(lab, steps=22):
     return lin
 
 
-def write_cube(path, look, black=0.0, white=1.0, size=65):
-    """Bake the look (plus this clip's levels) into a .cube file."""
+# ---------------------------------------------------------------- steady exposure
+# For clips where the camera's auto exposure changes mid-shot (a drone rising from shaded forest
+# to a sunlit peak: the trees go dark and the peak starts out washed-out white). A look file can
+# hold "exposure_keys": [[t, shadow_in, shadow_out, high_in, high_out, warm_boost], ...] in the
+# clip's own seconds. At each moment, every color first moves by the same code-value amount on
+# R, G and B (an exposure change, in log footage), picked by its brightness: shadows by
+# shadow_out - shadow_in, highlights by high_out - high_in, black and white untouched. warm_boost
+# adds color to warm highlights (sunlit gold) where the camera recorded them washed out.
+# high_in / high_out may be null before the bright subject appears. Keys are linearly
+# interpolated; the script renders them as a chain of LUTs, each enabled for its own moment.
+LUMA709 = np.array([0.2126, 0.7152, 0.0722])
+
+
+def exposure_pre(shadow_in, shadow_out, high_in=None, high_out=None, warm_boost=1.0):
+    """The pre-grade step for one moment (see above), as a function on encoded RGB."""
+    pts = [(0.0, 0.0), (shadow_in, shadow_out)]
+    if high_in is not None and high_in > shadow_in + 0.02:
+        pts.append((high_in, high_out))
+    pts.append((1.0, 1.0))
+    curve = pchip(pts)
+
+    def f(rgb):
+        y = rgb @ LUMA709
+        out = np.clip(rgb + (curve(y) - y)[..., None], 0, 1)
+        if high_out is None or warm_boost == 1:
+            return out
+        y2 = out @ LUMA709
+        k = 1 + (warm_boost - 1) * (_smoothstep(high_out - 0.15, high_out - 0.05, y2)
+                                     * _smoothstep(0.0, 0.03, out[..., 0] - out[..., 2]))
+        return np.clip(y2[..., None] + (out - y2[..., None]) * k[..., None], 0, 1)
+    return f
+
+
+def exposure_at(keys, t):
+    """Interpolated [shadow_in, shadow_out, high_in, high_out, warm_boost] at clip time t.
+    A key without highlights borrows the nearest key's high_in, unchanged (no highlight move)."""
+    keys = sorted(keys, key=lambda k: k[0])
+    known = [k for k in keys if k[3] is not None]
+    rows = []
+    for k in keys:
+        if k[3] is None and known:
+            near = min(known, key=lambda q: abs(q[0] - k[0]))
+            k = [k[0], k[1], k[2], near[3], near[3], 1.0]
+        rows.append([float(v) if v is not None else np.nan for v in k])
+    a = np.array(rows)
+    vals = [float(np.interp(t, a[:, 0], a[:, i])) for i in range(1, 6)]
+    if np.isnan(vals[2]):
+        vals[2] = vals[3] = None
+    return vals
+
+
+def write_cube(path, look, black=0.0, white=1.0, size=65, exposure=None):
+    """Bake the look (plus this clip's levels, and one moment's exposure step if given) into a
+    .cube file."""
     x = np.linspace(0, 1, size)
     bb, gg, rr = np.meshgrid(x, x, x, indexing="ij")              # red varies fastest
     rgb = np.stack([rr, gg, bb], -1).reshape(-1, 3)
+    if exposure is not None:
+        rgb = exposure_pre(*exposure)(rgb)
     out = np.clip(grade(rgb, look, black, white), 0, 1)
     name = Path(path).stem if isinstance(look, dict) else Path(str(look)).stem
     name = re.sub(r'[^A-Za-z0-9_. +-]', "_", name)
