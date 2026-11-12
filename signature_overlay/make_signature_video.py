@@ -361,7 +361,7 @@ def forest_matte(mt, pw, ph, work_w=480):
     so a tall evergreen is boosted evenly from top to bottom while the shaded rock under the peak is not. (A plain fade-in from the top split the trees in two:
     dark tops, bright lower halves.) See look_lut forest_boost."""
     d0, d1 = mt.get("dark", (0.40, 0.60))
-    t0, t1 = mt.get("top", (0.22, 0.42))
+    t0, t1 = mt.get("top") or (None, None)
     w0, w1 = mt.get("warm_bright", (0.48, 0.60))
     s0, s1 = mt.get("sky", (0.75, 0.88))
     sigma = max(0.5, mt.get("blur", 6 / 480) * work_w)
@@ -371,10 +371,11 @@ def forest_matte(mt, pw, ph, work_w=480):
     keep = (rgb + "st(4,clip((ld(0)-ld(2))/0.03,0,1));st(4,ld(4)*ld(4)*(3-2*ld(4)));"
             f"st(5,clip((ld(3)-{w0})/{w1 - w0},0,1));st(5,ld(5)*ld(5)*(3-2*ld(5)));"
             f"st(6,clip((ld(3)-{s0})/{s1 - s0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));"
-            f"st(7,clip((Y/H-{t0})/{t1 - t0},0,1));st(7,ld(7)*ld(7)*(3-2*ld(7)));"
-            "st(8,clip((ld(1)-ld(0))/0.02,0,1));st(8,ld(8)*ld(8)*(3-2*ld(8)));"
-            "st(9,clip((ld(3)-0.20)/0.10,0,1));st(8,max(ld(8),1-ld(9)*ld(9)*(3-2*ld(9))));"
-            "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)*(ld(7)+(1-ld(7))*ld(8))")
+            + (f"st(7,clip((Y/H-{t0})/{t1 - t0},0,1));st(7,ld(7)*ld(7)*(3-2*ld(7)));"
+               "st(8,clip((ld(1)-ld(0))/0.02,0,1));st(8,ld(8)*ld(8)*(3-2*ld(8)));"
+               "st(9,clip((ld(3)-0.20)/0.10,0,1));st(8,max(ld(8),1-ld(9)*ld(9)*(3-2*ld(9))));"
+               "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)*(ld(7)+(1-ld(7))*ld(8))" if t0 is not None else
+               "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)"))
     return (f"scale={work_w}:{wh}:flags=area,format=gbrp16le,split[fq][fk];"
             f"[fq]geq=r='{q}':g='{q}':b='{q}',gblur=sigma={sigma:.2f}[fq2];"
             f"[fk]geq=r='{keep}':g='{keep}':b='{keep}'[fk2];"
