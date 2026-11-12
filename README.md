@@ -3,7 +3,7 @@
 Finished signature videos, 4K vertical (2160x3840), HEVC (H.265) so each file stays under
 GitHub's 100 MB limit. On a phone: tap a file, download it, then Share -> Save Video.
 
-- `drone_mountain_final.mp4`: the latest version (mountain graded separately while the camera washes it out; forest brightened like exposure with its noise cleaned up, so the aspens don't fade, the evergreens are even to the top, and the dark corner isn't grainy).
+- `drone_mountain_final.mp4`: the latest version (mountain graded separately while the camera washes it out; the forest kept darker and clean, no grain, every tree one even tone).
   Older versions of the same file are in this branch's history.
 - `drone_mountain_v3_trees_fixed.mp4`: an earlier version (the browns shift around 12 s).
 
