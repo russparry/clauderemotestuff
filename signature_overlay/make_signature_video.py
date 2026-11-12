@@ -355,9 +355,11 @@ def write_cube_job(job):
 
 
 def forest_matte(mt, pw, ph, work_w=480):
-    """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the darker forest below the peak,
-    same size and format. Darkness x fade-in from the top, blurred; then times "not sunlit-warm and
-    not sky", unblurred, so the peak and sky stay exactly as they are. See look_lut forest_boost."""
+    """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the darker forest, same size and
+    format. Darkness, blurred; then, unblurred: not sunlit-warm, not sky, and in the top of the
+    picture ("top" range) only greens, so a tall evergreen is boosted evenly from top to bottom while
+    the shaded rock under the peak is not. (A plain fade-in from the top split the trees in two:
+    dark tops, bright lower halves.) See look_lut forest_boost."""
     d0, d1 = mt.get("dark", (0.40, 0.60))
     t0, t1 = mt.get("top", (0.22, 0.42))
     w0, w1 = mt.get("warm_bright", (0.48, 0.60))
@@ -365,12 +367,13 @@ def forest_matte(mt, pw, ph, work_w=480):
     sigma = max(0.5, mt.get("blur", 6 / 480) * work_w)
     wh = even(work_w * ph / pw)
     rgb = "st(0,r(X,Y)/65535);st(1,g(X,Y)/65535);st(2,b(X,Y)/65535);st(3,0.2126*ld(0)+0.7152*ld(1)+0.0722*ld(2));"
-    q = (rgb + f"st(5,clip((ld(3)-{d0})/{d1 - d0},0,1));st(5,1-ld(5)*ld(5)*(3-2*ld(5)));"
-         f"st(6,clip((Y/H-{t0})/{t1 - t0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));65535*ld(5)*ld(6)")
+    q = (rgb + f"st(5,clip((ld(3)-{d0})/{d1 - d0},0,1));st(5,1-ld(5)*ld(5)*(3-2*ld(5)));65535*ld(5)")
     keep = (rgb + "st(4,clip((ld(0)-ld(2))/0.03,0,1));st(4,ld(4)*ld(4)*(3-2*ld(4)));"
             f"st(5,clip((ld(3)-{w0})/{w1 - w0},0,1));st(5,ld(5)*ld(5)*(3-2*ld(5)));"
             f"st(6,clip((ld(3)-{s0})/{s1 - s0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));"
-            "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)")
+            f"st(7,clip((Y/H-{t0})/{t1 - t0},0,1));st(7,ld(7)*ld(7)*(3-2*ld(7)));"
+            "st(8,clip((ld(1)-ld(0))/0.02,0,1));st(8,ld(8)*ld(8)*(3-2*ld(8)));"
+            "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)*(ld(7)+(1-ld(7))*ld(8))")
     return (f"scale={work_w}:{wh}:flags=area,format=gbrp16le,split[fq][fk];"
             f"[fq]geq=r='{q}':g='{q}':b='{q}',gblur=sigma={sigma:.2f}[fq2];"
             f"[fk]geq=r='{keep}':g='{keep}':b='{keep}'[fk2];"

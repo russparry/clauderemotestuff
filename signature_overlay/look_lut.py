@@ -375,8 +375,9 @@ def region_adjust(rgb, exposure, color, hue):
 
 # forest_boost: brighten the darker forest like an exposure increase (a gain on the code values, so
 # its color and contrast are kept, unlike a lift that adds gray), only inside a soft mask the
-# script builds from each frame: darker areas below the peak (blurred, fading in from "top"), with
-# sunlit warm highlights and sky/snow cut out sharply. Applied before the look.
+# script builds from each frame: darker areas (blurred), with sunlit warm highlights and sky/snow
+# cut out sharply, and in the top of the picture ("top" range) only greens, so tall evergreens get
+# the same boost top to bottom while the shaded rock under the peak doesn't. Applied before the look.
 #   "keys":        [[t, gain], ...]  1 = off
 #   "green_extra": evergreens (green above red) get gain ** green_extra, since very dark greens
 #                  gain less from a multiply
