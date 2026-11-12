@@ -121,8 +121,9 @@ SCOPES = ("waveform=mode=column:filter=lowpass:graticule=green:flags=numbers+dot
 
 
 def find_ffmpeg():
-    """The bundled ffmpeg in pylib/ first: the HDR / Dolby Vision options need a recent build
-    (a stock Linux ffmpeg 6.x lacks -dolbyvision), and it keeps every machine on the same version."""
+    """The bundled ffmpeg in pylib/ (imageio-ffmpeg 0.6.0: ffmpeg 7.1 on Windows, 7.0.2 on Linux).
+    Pinned on purpose: the ffmpeg 9.0.2 in imageio-ffmpeg 0.8.x has a broken `unsharp` at 16-bit
+    (brightens the picture and tints it magenta), which wrecks every graded render."""
     if os.environ.get("FFMPEG"):
         return os.environ["FFMPEG"]
     sys.path.insert(0, str(HERE / "pylib"))
@@ -134,11 +135,22 @@ def find_ffmpeg():
     found = shutil.which("ffmpeg")
     if found:
         return found
-    sys.exit('ffmpeg not found. Run:  python3 -m pip install --target "%s" imageio-ffmpeg'
+    sys.exit('ffmpeg not found. Run:  python3 -m pip install --target "%s" "imageio-ffmpeg==0.6.0"'
              % (HERE / "pylib"))
 
 
+def find_hdr_ffmpeg():
+    """ffmpeg for untouched HDR renders, which need libx265's -dolbyvision option (ffmpeg 7.1+).
+    On Linux that's the ffmpeg 9.0.2 in pylib_hdr/ (imageio-ffmpeg 0.8.1); those renders don't
+    sharpen, so its unsharp bug doesn't matter there. Falls back to the main ffmpeg."""
+    if os.environ.get("FFMPEG_HDR"):
+        return os.environ["FFMPEG_HDR"]
+    found = sorted((HERE / "pylib_hdr" / "imageio_ffmpeg" / "binaries").glob("ffmpeg-*"))
+    return str(found[-1]) if found else FF
+
+
 FF = find_ffmpeg()
+FF_HDR = find_hdr_ffmpeg()
 
 
 def ff_text(args):
@@ -267,10 +279,14 @@ def ink_box(sig, sinfo):
     return paper, (min(xs), min(ys), max(xs), max(ys))
 
 
-def sample_lumas(bg, abs_times, to_rgb):
-    """Luma of frames at these source times, framed like the output (270x480), after HDR conversion."""
-    vf = f"scale=270:480:force_original_aspect_ratio=increase,crop=270:480,{to_rgb}"
-    frames = (ff_frame(bg, t, vf, 270, 480) for t in abs_times)
+FILL_SAMPLE = ("scale=270:480:force_original_aspect_ratio=increase,crop=270:480", 270, 480)
+
+
+def sample_lumas(bg, abs_times, to_rgb, sample=FILL_SAMPLE):
+    """Luma of frames at these source times, framed like the output (small), after HDR conversion."""
+    frame_vf, fw, fh = sample
+    vf = f"{frame_vf},{to_rgb}"
+    frames = (ff_frame(bg, t, vf, fw, fh) for t in abs_times)
     return [f @ LUMA for f in frames if f is not None]
 
 
@@ -304,11 +320,11 @@ def levels_from(lumas, box):
     return black, white, (lo, hi)
 
 
-def detect_shots(bg, trim_in, box, duration):
+def detect_shots(bg, trim_in, box, duration, sample=FILL_SAMPLE):
     """Cut points (section seconds) from scene-change scores on the picture area only;
     static black bars would otherwise dilute every score."""
     x0, y0, x1, y1 = box
-    vf = ("scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+    vf = (f"{sample[0]},"
           f"crop=iw*{x1 - x0:.4f}:ih*{y1 - y0:.4f}:iw*{x0:.4f}:ih*{y0:.4f},"
           f"select='gt(scene\\,{SCENE_CUT})',metadata=print:key=lavfi.scene_score:file=-")
     out, _ = ff_text(["-v", "error", *trim_in, "-i", str(bg), "-vf", vf, "-an", "-f", "null", "-"])
@@ -337,11 +353,11 @@ def even(v):
     return int(round(v / 2.0)) * 2
 
 
-def strip_rotation(tmp, out):
+def strip_rotation(tmp, out, ff=None):
     # iPhone clips carry a -90 degree rotation tag that ffmpeg copies even though the
     # pixels are already upright; strip it or players show the video sideways.
     # -strict unofficial keeps the Dolby Vision configuration box; without it the remux drops it.
-    subprocess.run([FF, "-v", "error", "-y", "-display_rotation:v:0", "0", "-i", str(tmp),
+    subprocess.run([ff or FF, "-v", "error", "-y", "-display_rotation:v:0", "0", "-i", str(tmp),
                     "-map", "0", "-c", "copy", "-movflags", "+faststart", "-strict", "unofficial", str(out)],
                    check=True)
     tmp.unlink()
@@ -463,7 +479,7 @@ def render(bg, sig, a):
     k = 0.25 if a.preview else 1.0
     W, H = even(OUT_W * k), even(OUT_H * k)
     tag = (("_reversed" if a.reverse else "") + ("_original" if a.no_grade else "")
-           + ("_shadow" if a.ink_shadow else ""))
+           + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else ""))
     if a.preview:
         master = PREVIEW_DIR / f"{bg.stem}{tag}_preview.mp4"
     else:
@@ -544,8 +560,26 @@ def render(bg, sig, a):
     # Grade: primary (measured levels) first, then the creative look, as one perceptual LUT
     # per shot. Everything is measured inside the picture area, so black bars don't count.
     to_rgb = TONEMAP if info["hdr"] else "format=gbrp16le"
-    overview = sample_lumas(bg, [t0 + bg_end * (i + 0.5) / 12 for i in range(12)], to_rgb)
+    # Framing: fill the 9:16 frame (crop what doesn't fit), or with --fit show the whole picture
+    # with black bars. Measurements follow the framing, so they see what the viewer sees.
+    if a.fit:
+        sample = (f"scale=480:{even(480 * info['h'] / info['w'])}", 480, even(480 * info["h"] / info["w"]))
+        ph = min(H, even(W * info["h"] / info["w"]))
+        pw = W if ph < H else even(H * info["w"] / info["h"])
+        place, pad = f"scale={pw}:{ph}:flags=lanczos", f",pad={W}:{H}:{(W - pw) // 2}:{(H - ph) // 2}:color=black"
+    else:
+        sample = FILL_SAMPLE
+        pw, ph = W, H
+        place, pad = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}", ""
+        if abs(info["w"] / info["h"] - W / H) > 0.05:
+            notes.append(f"the clip is {info['w']}x{info['h']}, not 9:16: filling the frame crops "
+                         + ("its sides" if info["w"] / info["h"] > W / H else "its top and bottom")
+                         + "; --fit shows the whole picture with black bars instead")
+    overview = sample_lumas(bg, [t0 + bg_end * (i + 0.5) / 12 for i in range(12)], to_rgb, sample)
     box = active_box(overview)
+    # The picture area in the finished frame (for the QC report): with --fit, inside the added bars.
+    fx0, fy0 = (W - pw) / 2 / W, (H - ph) / 2 / H
+    qc_box = (fx0 + box[0] * pw / W, fy0 + box[1] * ph / H, fx0 + box[2] * pw / W, fy0 + box[3] * ph / H)
     if box != (0.0, 0.0, 1.0, 1.0):
         notes.append(f"picture sits inside black bars (x {box[0]:.2f}-{box[2]:.2f}, y {box[1]:.2f}-{box[3]:.2f} "
                      "of the frame); bars kept, measurements use the picture only")
@@ -553,7 +587,7 @@ def render(bg, sig, a):
     base_look = a.look or (bg.stem if own_look.exists() else "neutral")
     shot_looks = parse_shot_looks(a.shot_looks)
     graded = not (a.legacy_grade or a.no_grade)
-    shots = detect_shots(bg, trim_in, box, bg_end) if a.shots and graded else [(0.0, bg_end)]
+    shots = detect_shots(bg, trim_in, box, bg_end, sample) if a.shots and graded else [(0.0, bg_end)]
     segments = [(sa, sb, shot_looks.get(i, base_look)) for i, (sa, sb) in enumerate(shots, 1)]
     multi = len(segments) > 1
 
@@ -575,7 +609,7 @@ def render(bg, sig, a):
         LUT_DIR.mkdir(parents=True, exist_ok=True)
         luts = []
         for i, (sa, sb, look) in enumerate(segments, 1):
-            lumas = (sample_lumas(bg, [t0 + sa + (sb - sa) * f for f in (0.15, 0.4, 0.65, 0.9)], to_rgb)
+            lumas = (sample_lumas(bg, [t0 + sa + (sb - sa) * f for f in (0.15, 0.4, 0.65, 0.9)], to_rgb, sample)
                      if multi else overview)
             black, white, measured = (0.0, 1.0, None) if a.no_levels else levels_from(lumas, box)
             spec = look_lut.adjust(look_lut.load_look(look), a.hues, a.hue_shift, a.strength)
@@ -613,7 +647,7 @@ def render(bg, sig, a):
                    f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.
-    prep = "" if native else f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},{picture},"
+    prep = "" if native else f"{place},{picture}{pad},"
     fc = (f"[0:v]{rev}{denoise}{prep}fade=t=out:st={fade_start:.4f}:d={a.fade_dur},"
           f"tpad=stop={pad_frames}:stop_mode=add:color=black[bg];"
           + ink_layer(sinfo, paper, sig_offset, sw, sh, a.ink, a.ink_shadow, k, rot, out_tags,
@@ -636,7 +670,8 @@ def render(bg, sig, a):
         audio_m = ["-map", "[am]"] if has_audio else []
 
     tmp_m = master.with_suffix(".tmp.mp4")
-    cmd = [FF, "-hide_banner", "-loglevel", "warning", "-stats", "-y",
+    ff = FF_HDR if hdr_out else FF
+    cmd = [ff, "-hide_banner", "-loglevel", "warning", "-stats", "-y",
            *trim_in, "-i", str(bg), "-i", str(sig), "-filter_complex", fc,
            "-map", "[vm]",
            *(hdr_enc(hdr_out, "ultrafast" if a.preview else "medium", 24 if a.preview else 16,
@@ -672,7 +707,7 @@ def render(bg, sig, a):
 
     master.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(cmd, check=True, cwd=LUT_DIR if LUT_DIR.exists() else None)
-    strip_rotation(tmp_m, master)
+    strip_rotation(tmp_m, master, ff)
     print("done")
 
     # Quality control: numbers first, eyes second (check the sheet / scopes too).
@@ -680,13 +715,13 @@ def render(bg, sig, a):
     if hdr_out:
         print("\nQC skipped: its targets are for standard-color video, and this output is HDR.")
     else:
-        print("\nQC (picture before the fade" + (", inside the black bars" if box != (0.0, 0.0, 1.0, 1.0) else "") + "):")
-        for line in qc_report(check, fade_start, box):
+        print("\nQC (picture before the fade" + (", inside the black bars" if qc_box != (0.0, 0.0, 1.0, 1.0) else "") + "):")
+        for line in qc_report(check, fade_start, qc_box):
             print("  " + line)
     if multi and not hdr_out:
         print("\nPer shot (luma is video range, black 16 / white 235):")
         out_shots = sorted((*window(sa, sb), look) for sa, sb, look in segments)
-        for line in shot_table(check, out_shots, fade_start, box):
+        for line in shot_table(check, out_shots, fade_start, qc_box):
             print("  " + line)
     contrast = None if (hdr_out or a.ink_box or rot) else ink_contrast(check, max(start - 0.1, 0), ck)
     if contrast is not None:
@@ -753,6 +788,9 @@ def main():
     ap.add_argument("--signature", default=str(SIGNATURE), help="signature clip (default: the one in this folder)")
     ap.add_argument("--from", dest="trim_from", type=float, help="use the clip only from this second on")
     ap.add_argument("--to", dest="trim_to", type=float, help="use the clip only up to this second")
+    ap.add_argument("--fit", action="store_true",
+                    help="show the whole picture: a horizontal clip sits inside the vertical frame with black "
+                         "bars above and below, instead of filling the frame and cropping its sides")
     ap.add_argument("--reverse", action="store_true",
                     help="play the footage backward; the signature and fade still play forward at the end")
     ap.add_argument("--look", help="a look in looks\\ (name), an example in looks\\examples\\, or a .json "

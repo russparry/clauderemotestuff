@@ -7,4 +7,5 @@ before/*
 *.part
 # Bundled ffmpeg, installed per session: python3 -m pip install --target pylib imageio-ffmpeg
 pylib/
+pylib_hdr/
 __pycache__/

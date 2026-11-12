@@ -39,6 +39,8 @@ import numpy as np
 #   vibrance       boosts dull colors more than vivid ones (0 = off)
 #   saturation     overall color strength multiplier
 #   denoise        true = light noise reduction first (for pushed low-light footage)
+#   protect_skin   false = no skin guard, for footage with no people (golden light on rock or
+#                  foliage sits in the skin hue band and would otherwise be held back)
 #   strength       how much of the look to use: 0.7 = 70% (subtle), 1 = full (default)
 # A hue can be a name from HUES or OKLCH degrees. Bands fall off smoothly (raised cosine).
 LOOKS_DIR = Path(__file__).resolve().parent / "looks"
@@ -48,7 +50,7 @@ NEUTRAL = {
     "curve": [[0, 0], [0.06, 0.045], [0.25, 0.25], [0.5, 0.56], [0.75, 0.82], [0.92, 0.95], [1, 1]],
     "shadows_ab": [0, 0], "highlights_ab": [0, 0],
     "hue_shifts": [], "chroma_gains": [],
-    "vibrance": 0.25, "saturation": 1.10, "denoise": False,
+    "vibrance": 0.25, "saturation": 1.10, "denoise": False, "protect_skin": True,
 }
 BUILTIN = {
     "neutral": NEUTRAL,
@@ -270,6 +272,7 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     rel = np.clip(C / np.maximum(edge(L, h), 1e-6), 0, 1)       # 0 = gray, 1 = gamut edge
     gain = gain * (1 + p["vibrance"] * (1 - rel))
     skin = _band(h, SKIN_HUE, SKIN_WIDTH) * _smoothstep(0.5, 0.3, rel) * _smoothstep(0.01, 0.03, C)
+    skin = skin * (1.0 if p.get("protect_skin", True) else 0.0)
     gain = gain * (1 - skin) + np.minimum(gain, SKIN_MAX_GAIN) * skin
     C2 = C * gain
 

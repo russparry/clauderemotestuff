@@ -13,9 +13,13 @@ before editing a video.
 
 ### Each session
 
-1. Bundled ffmpeg (the stock one is too old for the HDR / Dolby Vision options):
-   `python3 -m pip install --quiet --target signature_overlay/pylib imageio-ffmpeg`
-   (skip if `signature_overlay/pylib/` already exists).
+1. Bundled ffmpeg, pinned (skip if `signature_overlay/pylib/` already exists):
+   `python3 -m pip install --quiet --target signature_overlay/pylib "imageio-ffmpeg==0.6.0"`
+   Newer imageio-ffmpeg (0.8.x, ffmpeg 9.0.2) breaks the grade: its 16-bit `unsharp` tints
+   the picture magenta and brightens it. Untouched HDR renders (`--no-grade` on iPhone HDR)
+   also need libx265's Dolby Vision option, which only the newer build has:
+   `python3 -m pip install --quiet --target signature_overlay/pylib_hdr "imageio-ffmpeg==0.8.1"`
+   (the script uses it automatically for those renders only).
 2. Clips come from Google Drive share links ("Anyone with the link"). The session's cloud
    environment ("clauderemotestuff") allows `drive.google.com` and
    `drive.usercontent.google.com`:
@@ -34,5 +38,9 @@ before editing a video.
   hues, or `--hues` / `--hue-shift` / `--strength`). `looks/examples/` (summer, fall, dusk)
   are past projects, reference only, never defaults.
 - Ask for the signature start time if it isn't given ("as late as you can" = `--start latest`).
+- Horizontal (16:9) clips, such as DJI drone footage: ask once whether to fill the vertical frame
+  (crops the sides) or show the whole shot with black bars (`--fit`). For the first one
+  (Nov 2026) they chose the whole shot with bars, "as long as we keep the 4k": the file stays
+  2160x3840.
 - No Instagram exports. No `--ink-shadow` unless asked. Do only what was asked, and ask at
   most one question, only when the request can't be done as stated.
