@@ -321,10 +321,12 @@ def fit_gamut(lab, steps=22):
 #                     content, so browns, snow and trees all move together.
 #   shadow_lift_keys  [[t, amount], ...] lifts only the darkest tones: zero at black and from 0.4 up,
 #                     so midtones such as browns don't move. Keep amount under 0.17.
-#   warm_highlights   {"knee", "ceiling", "color"}: a fixed rule for every frame. Warm, bright colors
+#   warm_highlights   {"knee", "ceiling", "color", "hue"}: a fixed rule for every frame. Warm, bright colors
 #                     above the knee are eased toward the ceiling, with color added in proportion to
 #                     the brightness taken away, so a washed-out sunlit peak turns gold and a gold one
-#                     barely changes. Neutral and cool colors (snow, sky) are untouched.
+#                     barely changes. "hue" (degrees per unit of brightness removed beyond
+#                     "hue_from", minus = toward orange) turns clearly washed-out ones back from
+#                     the yellow the camera's highlight roll-off gives them. Neutral and cool colors (snow, sky) are untouched.
 # Nov 2026 lesson: an earlier version moved shadows and highlights by different amounts that changed
 # over time; that squeezed the midtones and made all the browns shift at 12 s. Keep time-varying
 # changes uniform (exposure) or confined to the darkest tones.
@@ -383,6 +385,18 @@ def pre_transform(look, t=None):
             k = 1 + per * (y - y2)
             yy = out @ LUMA709
             out = np.clip(yy[..., None] + (out - yy[..., None]) * k[..., None], 0, 1)
+            turn = wh.get("hue", 0.0)
+            if turn:
+                # Washed-out warm highlights also come out yellower (the camera's highlight
+                # roll-off squeezes red first): turn them toward orange in proportion to the
+                # brightness taken away, in OKLab, keeping lightness and chroma.
+                lab = linear_to_oklab(srgb_decode(out))
+                ang = np.radians(turn * np.maximum((y - y2) - wh.get("hue_from", 0.04), 0))
+                c, s_ = np.cos(ang), np.sin(ang)
+                a2 = lab[..., 1] * c - lab[..., 2] * s_
+                b2 = lab[..., 1] * s_ + lab[..., 2] * c
+                lab = np.stack([lab[..., 0], a2, b2], -1)
+                out = np.clip(srgb_encode(fit_gamut(lab)), 0, 1)
         return out
     return f
 

@@ -28,7 +28,12 @@ before editing a video.
 3. Render with `signature_overlay/make_signature_video.py` (see the recipe for options).
    Use `--preview --sheet` first when the timing is uncertain, and look at the sheet.
 4. Send the finished `signature_overlay/4k/<clip>_4k.mp4` (and the check sheet) to the user
-   as files in the app. Videos are not committed to git.
+   as files in the app. The user saves videos to their phone from the **GitHub app**, so also
+   push a phone copy to the repo's `videos` branch (separate history, no code; public is fine,
+   the user said so for all their videos): `python3 signature_overlay/phone_copy.py <4k file>
+   <videos checkout>/<name>.mp4` makes a 4K HEVC copy under GitHub's 100 MB file limit.
+   GitHub releases can't be created from these sessions (403), so don't try. Keep earlier
+   versions too (copy a render to `4k/versions/` before re-rendering; renders overwrite).
 
 ### The user's standing preferences
 
