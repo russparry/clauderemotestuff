@@ -107,7 +107,9 @@ story), which took eleven rounds to get right. Read this before grading anything
 
 ## Delivering
 
-- Send the full render in the app (it's large, 160-220 MB) and a before/after crop of what changed.
+- Send the full render in the app (160-220 MB for 26 s) and a before/after crop of what changed.
+  The app refuses files over 400 MiB (a 45 s 4K60 render is about 420 MiB): send the phone copy
+  instead.
 - Phone copy for the GitHub app: `python3 phone_copy.py <render> <videos checkout>/<name>.mp4`
   (4K HEVC under 100 MB), committed to the repo's `videos` branch (public is fine for the user's
   videos). The user opens the repo in the GitHub app, switches to `videos`, downloads, Save Video.
