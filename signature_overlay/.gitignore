@@ -1,0 +1,14 @@
+# Videos are fetched from Google Drive each session and sent back; they don't go in git.
+before/*
+!before/.gitkeep
+4k/*
+!4k/.gitkeep
+*.tmp.mp4
+*.part
+# Bundled ffmpeg, installed per session: python3 -m pip install --target pylib imageio-ffmpeg
+pylib/
+pylib_hdr/
+__pycache__/
+graded/*
+!graded/.gitkeep
+review/
