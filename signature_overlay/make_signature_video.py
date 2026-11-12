@@ -354,23 +354,20 @@ def write_cube_job(job):
     return look_lut.write_cube(*job)
 
 
-def exposure_steps(keys, t_from, t_to, rate=15, tol=0.002):
-    """The moments (clip seconds) where a look's steady-exposure step changes enough to need its
-    own LUT: checked 15 times a second, a new LUT when any setting moves by more than tol
-    (0.2% of the signal range, too small to see as a step). Each LUT uses the settings at the
-    middle of its slice. Returns [(start time, settings), ...] covering t_from to t_to."""
-    def vec(p):
-        return np.array([p[0], p[1], p[2] if p[2] is not None else 0, p[3] if p[3] is not None else 0,
-                         p[4] / 10])
+def exposure_steps(look, t_from, t_to, rate=15, tol=0.002):
+    """The moments (clip seconds) where a look's time keys change enough to need their own LUT:
+    checked 15 times a second, a new LUT when a setting moves by more than tol (0.2% of the
+    signal range, too small to see as a step). Returns [(start, middle), ...] covering t_from to
+    t_to; each LUT uses the settings at the middle of its slice."""
     ticks = np.arange(t_from, t_to, 1.0 / rate)
     starts, last = [], None
     for t in ticks:
-        v = vec(look_lut.exposure_at(keys, t))
+        v = np.array(look_lut.moment(look, t))
         if last is None or np.max(np.abs(v - last)) > tol:
             starts.append(float(t))
             last = v
     ends = starts[1:] + [t_to]
-    return [(st, look_lut.exposure_at(keys, (st + en) / 2)) for st, en in zip(starts, ends)]
+    return [(st, (st + en) / 2) for st, en in zip(starts, ends)]
 
 
 def even(v):
@@ -649,12 +646,12 @@ def render(bg, sig, a):
             spec = look_lut.adjust(look_lut.load_look(look), a.hues, a.hue_shift, a.strength)
             name = re.sub(r"[^A-Za-z0-9_.-]", "_",
                           f"{bg.stem}{tag}" + (f"_s{i:02d}" if multi else "") + f"_{Path(look).stem}.cube")
-            if spec.get("exposure_keys"):
+            if look_lut.has_time_keys(spec):
                 if multi or a.reverse:
-                    sys.exit("A look with exposure_keys works on a single shot, played forward.")
-                steps = exposure_steps(spec["exposure_keys"], t0, t0 + bg_end)
-                jobs = [(LUT_DIR / f"{Path(name).stem}_x{j:03d}.cube", spec, black, white, 65, p)
-                        for j, (_, p) in enumerate(steps)]
+                    sys.exit("A look with time keys works on a single shot, played forward.")
+                steps = exposure_steps(spec, t0, t0 + bg_end)
+                jobs = [(LUT_DIR / f"{Path(name).stem}_x{j:03d}.cube", spec, black, white, 65, mid)
+                        for j, (_, mid) in enumerate(steps)]
                 with concurrent.futures.ProcessPoolExecutor() as pool:
                     list(pool.map(write_cube_job, jobs))
                 # One LUT per moment, each switched on only for its own slice of the timeline.
@@ -664,7 +661,7 @@ def render(bg, sig, a):
                     on = f"gte(t\\,{start_s:.4f})" + (f"*lt(t\\,{end_s:.4f})" if end_s is not None else "")
                     luts.append(f"lut3d=file={path.name}:interp=tetrahedral:enable='{on}'")
                     start_s = end_s
-                notes.append(f"steady exposure: {len(steps)} grade steps between "
+                notes.append(f"grade changes over time: {len(steps)} steps between "
                              f"{steps[1][0] - t0 if len(steps) > 1 else 0:.2f} and {steps[-1][0] - t0:.2f} s")
                 levels = (f"levels {black:.3f}-{white:.3f}"
                           + (f" (measured {measured[0]:.3f}-{measured[1]:.3f})" if measured else " (off)"))

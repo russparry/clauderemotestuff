@@ -1,5 +1,5 @@
 {
-  "notes": "DJI D-Log M drone clip, Nov 10 2026: snowy creek and evergreens rising to a sunlit golden peak under a pale blue sky. Log footage needs real contrast and color: the golden alpenglow is the featured hue, evergreens a little richer, sky a little bluer, snow kept white (no warm highlight tint). No people, so the skin guard is off so the golden light can glow. Nov 12 revision: the user saw the trees go black as the gold peak comes into view, so the curve's dark end is lifted (shadows about 3x brighter, true black kept) while the bright end is unchanged; gold +38% (was +35%) so the peak measures the same as before. Nov 12 revision 2: the camera's auto exposure drops about 2.5 stops between 12.5 and 17 s as the drone rises (trees go from 0.36 to 0.13 in code value; the peak starts near white, 0.88, and settles to gold, 0.62). exposure_keys (measured every 0.5 s: trees = median of the lower 45% of the frame, peak = median of the warm bright pixels in the upper half) give back 75% of the trees' drop and hold the peak at its settled gold level (0.655) the whole way, with up to 2.5x color on warm highlights while the camera was washed out. With exposure_keys lifting the trees, the curve's shadow lift was halved (it was doubling up and made the shadows hazy); the bright end is unchanged.",
+  "notes": "DJI D-Log M drone clip, Nov 10 2026: snowy creek and evergreens rising to a sunlit golden peak under a pale blue sky. Log footage needs real contrast and color: the golden alpenglow is the featured hue, evergreens a little richer, sky a little bluer, snow kept white (no warm highlight tint). No people, so the skin guard is off so the golden light can glow. Nov 12 revision: the user saw the trees go black as the gold peak comes into view, so the curve's dark end is lifted (shadows about 3x brighter, true black kept) while the bright end is unchanged; gold +38% (was +35%) so the peak measures the same as before. Nov 12 revision 3 (replaces revision 2, whose shadow and highlight moves changed over time and squeezed the midtones, so all the browns shifted at 12 s): exposure_offsets undo only the camera's real exposure dip (about 0.1 in code value, 13-17 s, measured frame to frame), the same for every color; shadow_lift_keys lift only the darkest tones so the backlit trees stay at about the early forest's brightness, easing up to a little brighter as the peak comes in (Y 66 to 76); a fixed warm_highlights rule brings the washed-out sunlit peak (12.5-15 s) to the same gold as later. Gold gain 1.3 so the gold matches the approved version. The curve's shadow lift stays halved.",
   "curve": [
     [
       0,
@@ -47,7 +47,7 @@
     [
       64,
       30,
-      1.38
+      1.3
     ],
     [
       235,
@@ -64,238 +64,357 @@
   "saturation": 1.35,
   "protect_skin": false,
   "denoise": false,
-  "exposure_keys": [
+  "exposure_offsets": [
     [
       12.0,
-      0.3614,
-      0.3614,
-      null,
-      null,
-      1.0
+      -0.0
+    ],
+    [
+      12.25,
+      -0.0029
     ],
     [
       12.5,
-      0.3608,
-      0.3608,
-      0.8762,
-      0.655,
-      2.5
+      -0.0097
+    ],
+    [
+      12.75,
+      -0.0112
     ],
     [
       13.0,
-      0.3457,
-      0.3564,
-      0.8847,
-      0.655,
-      2.5
+      -0.0098
+    ],
+    [
+      13.25,
+      -0.0052
     ],
     [
       13.5,
-      0.3152,
-      0.3488,
-      0.8279,
-      0.655,
-      2.5
+      0.0024
+    ],
+    [
+      13.75,
+      0.0122
     ],
     [
       14.0,
-      0.2761,
-      0.339,
-      0.8113,
-      0.655,
-      2.5
+      0.0229
+    ],
+    [
+      14.25,
+      0.0335
     ],
     [
       14.5,
-      0.2447,
-      0.3312,
-      0.7919,
-      0.655,
-      2.5
+      0.0439
+    ],
+    [
+      14.75,
+      0.0542
     ],
     [
       15.0,
-      0.2097,
-      0.3224,
-      0.7455,
-      0.655,
-      1.172
+      0.0646
+    ],
+    [
+      15.25,
+      0.075
     ],
     [
       15.5,
-      0.179,
-      0.3148,
-      0.6984,
-      0.655,
-      1.001
+      0.0842
+    ],
+    [
+      15.75,
+      0.0916
     ],
     [
       16.0,
-      0.1551,
-      0.3088,
-      0.6593,
-      0.655,
-      1.0
+      0.0971
+    ],
+    [
+      16.25,
+      0.1003
     ],
     [
       16.5,
-      0.1381,
-      0.3045,
-      0.628,
-      0.655,
-      1.0
+      0.1027
+    ],
+    [
+      16.75,
+      0.1053
     ],
     [
       17.0,
-      0.129,
-      0.3022,
-      0.6071,
-      0.655,
-      1.0
+      0.1077
+    ],
+    [
+      17.25,
+      0.1091
     ],
     [
       17.5,
-      0.1273,
-      0.3018,
-      0.6012,
-      0.655,
-      1.0
+      0.1086
+    ],
+    [
+      17.75,
+      0.1053
     ],
     [
       18.0,
-      0.1326,
-      0.3031,
-      0.6091,
-      0.655,
-      1.0
+      0.0998
+    ],
+    [
+      18.25,
+      0.0926
     ],
     [
       18.5,
-      0.1409,
-      0.3052,
-      0.6191,
-      0.655,
-      1.0
+      0.0846
+    ],
+    [
+      18.75,
+      0.0763
     ],
     [
       19.0,
-      0.1492,
-      0.3073,
-      0.6348,
-      0.655,
-      1.0
+      0.0685
+    ],
+    [
+      19.25,
+      0.062
     ],
     [
       19.5,
-      0.1555,
-      0.3089,
-      0.6513,
-      0.655,
-      1.0
+      0.0571
+    ],
+    [
+      19.75,
+      0.0539
     ],
     [
       20.0,
-      0.1587,
-      0.3097,
-      0.6552,
-      0.655,
-      1.002
+      0.0521
+    ],
+    [
+      20.25,
+      0.0516
     ],
     [
       20.5,
-      0.1585,
-      0.3096,
-      0.6565,
-      0.655,
-      1.0
+      0.0516
+    ],
+    [
+      20.75,
+      0.0515
     ],
     [
       21.0,
-      0.1584,
-      0.3096,
-      0.6554,
-      0.655,
-      1.0
+      0.0514
+    ],
+    [
+      21.25,
+      0.0512
     ],
     [
       21.5,
-      0.1581,
-      0.3095,
-      0.6527,
-      0.655,
-      1.0
+      0.0511
+    ],
+    [
+      21.75,
+      0.051
     ],
     [
       22.0,
-      0.1582,
-      0.3096,
-      0.6522,
-      0.655,
-      1.0
+      0.051
+    ],
+    [
+      22.25,
+      0.051
     ],
     [
       22.5,
-      0.158,
-      0.3095,
-      0.6525,
-      0.655,
-      1.0
+      0.0511
+    ],
+    [
+      22.75,
+      0.0517
     ],
     [
       23.0,
-      0.1574,
-      0.3093,
-      0.6471,
-      0.655,
-      1.021
+      0.0528
+    ],
+    [
+      23.25,
+      0.0545
     ],
     [
       23.5,
-      0.1552,
-      0.3088,
-      0.6415,
-      0.655,
-      1.004
+      0.0566
+    ],
+    [
+      23.75,
+      0.0587
     ],
     [
       24.0,
-      0.153,
-      0.3083,
-      0.6387,
-      0.655,
-      1.0
+      0.061
+    ],
+    [
+      24.25,
+      0.0635
     ],
     [
       24.5,
-      0.1499,
-      0.3075,
-      0.6344,
-      0.655,
-      1.0
+      0.0664
+    ],
+    [
+      24.75,
+      0.0695
     ],
     [
       25.0,
-      0.1457,
-      0.3064,
-      0.6278,
-      0.655,
-      1.0
+      0.0728
+    ],
+    [
+      25.25,
+      0.0762
     ],
     [
       25.5,
-      0.1419,
-      0.3055,
-      0.6231,
-      0.655,
-      1.0
+      0.0794
+    ],
+    [
+      25.75,
+      0.0828
     ],
     [
       26.0,
-      0.138,
-      0.3045,
-      0.6209,
-      0.655,
-      1.0
+      0.0855
     ]
-  ]
+  ],
+  "shadow_lift_keys": [
+    [
+      12.0,
+      0.0
+    ],
+    [
+      12.5,
+      0.0151
+    ],
+    [
+      13.0,
+      0.0226
+    ],
+    [
+      13.5,
+      0.0216
+    ],
+    [
+      14.0,
+      0.0169
+    ],
+    [
+      14.5,
+      0.0139
+    ],
+    [
+      15.0,
+      0.0163
+    ],
+    [
+      15.5,
+      0.028
+    ],
+    [
+      16.0,
+      0.0438
+    ],
+    [
+      16.5,
+      0.0584
+    ],
+    [
+      17.0,
+      0.0673
+    ],
+    [
+      17.5,
+      0.0719
+    ],
+    [
+      18.0,
+      0.0759
+    ],
+    [
+      18.5,
+      0.082
+    ],
+    [
+      19.0,
+      0.0884
+    ],
+    [
+      19.5,
+      0.0933
+    ],
+    [
+      20.0,
+      0.0956
+    ],
+    [
+      20.5,
+      0.0964
+    ],
+    [
+      21.0,
+      0.0966
+    ],
+    [
+      21.5,
+      0.0967
+    ],
+    [
+      22.0,
+      0.0967
+    ],
+    [
+      22.5,
+      0.0963
+    ],
+    [
+      23.0,
+      0.0954
+    ],
+    [
+      23.5,
+      0.0939
+    ],
+    [
+      24.0,
+      0.092
+    ],
+    [
+      24.5,
+      0.0899
+    ],
+    [
+      25.0,
+      0.0876
+    ],
+    [
+      25.5,
+      0.0853
+    ],
+    [
+      26.0,
+      0.0837
+    ]
+  ],
+  "warm_highlights": {
+    "knee": 0.62,
+    "ceiling": 0.7,
+    "color": 5.0
+  }
 }

@@ -39,7 +39,7 @@ import numpy as np
 #   vibrance       boosts dull colors more than vivid ones (0 = off)
 #   saturation     overall color strength multiplier
 #   denoise        true = light noise reduction first (for pushed low-light footage)
-#   exposure_keys  steady exposure over time, for auto-exposure changes (see "steady exposure")
+#   exposure_offsets, shadow_lift_keys, warm_highlights: see "changes over time" below
 #   protect_skin   false = no skin guard, for footage with no people (golden light on rock or
 #                  foliage sits in the skin hue band and would otherwise be held back)
 #   strength       how much of the look to use: 0.7 = 70% (subtle), 1 = full (default)
@@ -311,65 +311,91 @@ def fit_gamut(lab, steps=22):
     return lin
 
 
-# ---------------------------------------------------------------- steady exposure
-# For clips where the camera's auto exposure changes mid-shot (a drone rising from shaded forest
-# to a sunlit peak: the trees go dark and the peak starts out washed-out white). A look file can
-# hold "exposure_keys": [[t, shadow_in, shadow_out, high_in, high_out, warm_boost], ...] in the
-# clip's own seconds. At each moment, every color first moves by the same code-value amount on
-# R, G and B (an exposure change, in log footage), picked by its brightness: shadows by
-# shadow_out - shadow_in, highlights by high_out - high_in, black and white untouched. warm_boost
-# adds color to warm highlights (sunlit gold) where the camera recorded them washed out.
-# high_in / high_out may be null before the bright subject appears. Keys are linearly
-# interpolated; the script renders them as a chain of LUTs, each enabled for its own moment.
+# ---------------------------------------------------------------- changes over time, warm highlights
+# Optional look keys, for clips whose camera exposure changes mid-shot (a drone rising from shaded
+# forest to a sunlit peak). Times are the clip's own seconds, interpolated linearly.
+#   exposure_offsets  [[t, offset], ...] undoes the camera's own exposure change: the same code-value
+#                     offset for every color (an exposure change, in log footage), with a soft
+#                     shoulder above 0.82 so nothing clips. Measured from how much neighbouring
+#                     frames brighten or darken (median over well-exposed pixels), not from scene
+#                     content, so browns, snow and trees all move together.
+#   shadow_lift_keys  [[t, amount], ...] lifts only the darkest tones: zero at black and from 0.4 up,
+#                     so midtones such as browns don't move. Keep amount under 0.17.
+#   warm_highlights   {"knee", "ceiling", "color"}: a fixed rule for every frame. Warm, bright colors
+#                     above the knee are eased toward the ceiling, with color added in proportion to
+#                     the brightness taken away, so a washed-out sunlit peak turns gold and a gold one
+#                     barely changes. Neutral and cool colors (snow, sky) are untouched.
+# Nov 2026 lesson: an earlier version moved shadows and highlights by different amounts that changed
+# over time; that squeezed the midtones and made all the browns shift at 12 s. Keep time-varying
+# changes uniform (exposure) or confined to the darkest tones.
 LUMA709 = np.array([0.2126, 0.7152, 0.0722])
+TIME_KEYS = ("exposure_offsets", "shadow_lift_keys")
 
 
-def exposure_pre(shadow_in, shadow_out, high_in=None, high_out=None, warm_boost=1.0):
-    """The pre-grade step for one moment (see above), as a function on encoded RGB."""
-    pts = [(0.0, 0.0), (shadow_in, shadow_out)]
-    if high_in is not None and high_in > shadow_in + 0.02:
-        pts.append((high_in, high_out))
-    pts.append((1.0, 1.0))
-    curve = pchip(pts)
+def _key_at(keys, t):
+    if not keys:
+        return 0.0
+    a = np.array(sorted(keys), dtype=float)
+    return float(np.interp(t, a[:, 0], a[:, 1]))
+
+
+def has_time_keys(look):
+    return any(look.get(k) for k in TIME_KEYS)
+
+
+def moment(look, t):
+    """(exposure offset, shadow lift) at clip time t."""
+    return _key_at(look.get("exposure_offsets"), t), _key_at(look.get("shadow_lift_keys"), t)
+
+
+def _shift_luma(rgb, y_new):
+    y = rgb @ LUMA709
+    return np.clip(rgb + (y_new - y)[..., None], 0, 1)
+
+
+def pre_transform(look, t=None):
+    """The step before the look's grade (exposure offset and shadow lift at time t, then the warm
+    highlight rule), as a function on encoded RGB; None if the look uses none of them."""
+    offset, lift = moment(look, t) if (t is not None and has_time_keys(look)) else (0.0, 0.0)
+    wh = look.get("warm_highlights")
+    if not offset and not lift and not wh:
+        return None
 
     def f(rgb):
-        y = rgb @ LUMA709
-        out = np.clip(rgb + (curve(y) - y)[..., None], 0, 1)
-        if high_out is None or warm_boost == 1:
-            return out
-        y2 = out @ LUMA709
-        k = 1 + (warm_boost - 1) * (_smoothstep(high_out - 0.15, high_out - 0.05, y2)
-                                     * _smoothstep(0.0, 0.03, out[..., 0] - out[..., 2]))
-        return np.clip(y2[..., None] + (out - y2[..., None]) * k[..., None], 0, 1)
+        out = rgb
+        if offset:
+            y = out @ LUMA709
+            z = y + offset
+            if offset > 0:                    # brightening: squeeze what would pass white back under it
+                knee = 0.82                   # (no change at all when the offset is 0, so no jump)
+                z = np.where(z > knee, knee + (z - knee) * (1 - knee) / (1 + offset - knee), z)
+            out = _shift_luma(out, z)
+        if lift:
+            u = np.clip((out @ LUMA709) / 0.4, 0, 1)
+            out = np.clip(out + (lift * 6.75 * u * (1 - u) ** 2)[..., None], 0, 1)
+        if wh:
+            knee, ceil, per = wh.get("knee", 0.62), wh.get("ceiling", 0.70), wh.get("color", 5.0)
+            y = out @ LUMA709
+            warm = _smoothstep(0.0, 0.03, out[..., 0] - out[..., 2])
+            eased = np.where(y > knee, knee + (ceil - knee) * (1 - np.exp(-np.maximum(y - knee, 0) / (ceil - knee))), y)
+            y2 = y + (eased - y) * warm
+            out = _shift_luma(out, y2)
+            k = 1 + per * (y - y2)
+            yy = out @ LUMA709
+            out = np.clip(yy[..., None] + (out - yy[..., None]) * k[..., None], 0, 1)
+        return out
     return f
 
 
-def exposure_at(keys, t):
-    """Interpolated [shadow_in, shadow_out, high_in, high_out, warm_boost] at clip time t.
-    A key without highlights borrows the nearest key's high_in, unchanged (no highlight move)."""
-    keys = sorted(keys, key=lambda k: k[0])
-    known = [k for k in keys if k[3] is not None]
-    rows = []
-    for k in keys:
-        if k[3] is None and known:
-            near = min(known, key=lambda q: abs(q[0] - k[0]))
-            k = [k[0], k[1], k[2], near[3], near[3], 1.0]
-        rows.append([float(v) if v is not None else np.nan for v in k])
-    a = np.array(rows)
-    vals = [float(np.interp(t, a[:, 0], a[:, i])) for i in range(1, 6)]
-    if np.isnan(vals[2]):
-        vals[2] = vals[3] = None
-    return vals
-
-
-def write_cube(path, look, black=0.0, white=1.0, size=65, exposure=None):
-    """Bake the look (plus this clip's levels, and one moment's exposure step if given) into a
-    .cube file."""
+def write_cube(path, look, black=0.0, white=1.0, size=65, t=None):
+    """Bake the look (plus this clip's levels, and the look's pre-grade step at clip time t if it
+    has one) into a .cube file."""
     x = np.linspace(0, 1, size)
     bb, gg, rr = np.meshgrid(x, x, x, indexing="ij")              # red varies fastest
     rgb = np.stack([rr, gg, bb], -1).reshape(-1, 3)
-    if exposure is not None:
-        rgb = exposure_pre(*exposure)(rgb)
+    pre = pre_transform(look if isinstance(look, dict) else load_look(look), t)
+    if pre is not None:
+        rgb = pre(rgb)
     out = np.clip(grade(rgb, look, black, white), 0, 1)
     name = Path(path).stem if isinstance(look, dict) else Path(str(look)).stem
     name = re.sub(r'[^A-Za-z0-9_. +-]', "_", name)

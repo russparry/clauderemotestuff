@@ -183,7 +183,7 @@ Most videos aren't graded (`--no-grade`). When the user does ask for color work,
    | `strength` | How much of the look to use: 0.7 is subtle, 1 is full. |
    | `denoise` | Light noise reduction first, for low-light footage pushed hard. |
    | `protect_skin` | `false` turns off the skin guard, for footage with no people. Golden light on rock or foliage sits in the skin hue band (about 38–86°) and is otherwise held to +5%. |
-   | `exposure_keys` | Steady exposure over time, for clips where the camera's auto exposure changes mid-shot. See "Steady exposure" below. |
+   | `exposure_offsets`, `shadow_lift_keys`, `warm_highlights` | Grade changes over time, for auto-exposure changes and backlit subjects. See "Changes over time" below. |
 3. For quick changes without a file, use `--hues "orange+20,blue+10,green-15"` (percent), `--hue-shift "yellow-8"` (degrees), and `--strength 0.7`. These add to whatever look is in use. The plan printout shows them on the `look` line.
 4. With no look file and no `--look`, the **neutral** base is used: the gentle S-curve, vibrance 0.25, saturation ×1.10, and no hue preference at all.
 
@@ -195,15 +195,18 @@ What a hue boost can't do, by design:
 
 `look_lut.py` builds the grade as a **perceptual 3D LUT**. The original ffmpeg filter chain is kept as `--legacy-grade` for comparisons, but only for the three example looks.
 
-### Steady exposure (auto-exposure changes mid-shot)
+### Changes over time (auto exposure, backlit subjects)
 
-Drone and phone cameras re-expose on their own. In the Nov 2026 DJI clip, the drone rose from shaded forest to a sunlit peak and the camera dropped about 2.5 stops between 12.5 and 17 s: the trees went dark, and the peak came in almost white before it settled to gold. The user: "the trees go black as the gold on the mountain comes into focus… can we keep the trees brighter and keep the mountains the same gold from start to finish?" One static grade can't undo a change over time.
+Drone and phone cameras re-expose on their own, and a moving camera's scene changes brightness too. In the Nov 2026 DJI clip the drone rises from shaded forest to a sunlit peak: the trees end up backlit and dark, and the peak comes in almost white (12.5–15 s) before it settles to gold. The user asked to keep the trees brighter and the mountain "the same gold from start to finish". One static grade can't do that, but how it changes over time matters a lot:
 
-- **Measure** every 0.5 s on source frames: a shadow level (here the median of the lower 45% of the frame, the trees) and a highlight level (the median of the warm, bright pixels in the upper half, the peak).
-- **Keys:** `[t, shadow_in, shadow_out, high_in, high_out, warm_boost]` in the clip's own seconds, written into the look file. `shadow_out` gives back part of the shadow drop (75% here; all of it looks flat). `high_out` holds the bright subject at its settled level. `warm_boost` adds color to warm highlights only (red above blue), solved per moment so the gold matches; it's capped at 2.5 because overexposed footage lost some color for good. A boost that isn't limited to warm colors turned the snow vivid blue.
-- **How it works:** before the look, each color moves by the same code-value amount on R, G and B (an exposure change, in log footage), chosen by its brightness along a smooth curve through (0,0), the shadow key, the highlight key and (1,1). True black and white stay put.
-- **Rendering:** ffmpeg can't swap a LUT mid-video (`lut3d` has no runtime `file` command), so the script writes one LUT per moment (checked 15 times a second; a new LUT when a setting moves more than 0.2%) and chains them, each with `enable` for its own slice. The DJI clip used 116 LUTs; the frame-to-frame brightness change stayed under 1 level (no steps or flicker). It adds a few minutes to a render.
-- **Don't lift twice:** once the keys lift the shadows, keep the look's own shadow lift modest. Doubling up made the shadows hazy (QC black at 42–58).
+- **First attempt (don't repeat):** shadows and highlights moved by different amounts that changed over time. That squeezed the midtones, and the user saw "a drastic change in how all the browns look at 12 seconds in." It also over-corrected, because most of the trees' darkening was the scene (backlight), not exposure.
+- **What works:**
+  1. **`exposure_offsets`** undo only the camera's real exposure change: the same code-value offset for every color, with a squeeze above 0.82 only when brightening (it's zero at offset 0, so it never jumps). Measure it from neighbouring frames (10 a second): the median code-value change of well-exposed pixels, summed and smoothed over 1 s. In the DJI clip that was a dip of about 0.1 between 13 and 17 s, not the 0.23 the trees alone suggested.
+  2. **`shadow_lift_keys`** lift only the darkest tones (a bump that's zero at black and from 0.4 up), so browns and snow don't move. Solved per half second so the trees keep their brightness (here Y 66, easing to 76 as the peak comes in). Keep each amount under 0.17.
+  3. **`warm_highlights`** (`knee`, `ceiling`, `color`) is the same on every frame: warm, bright colors above the knee are eased toward the ceiling, with color added in proportion to the brightness removed. The washed-out peak turns gold; the gold peak barely changes; snow and sky (not warm) are untouched.
+- **Check for steps:** grade the same frames at moments 1/15 s apart along the whole timeline; the largest change should be a level or two (the DJI clip: 1.5 levels). Then compare stills across the moment the user complains about.
+- **Rendering:** ffmpeg can't swap a LUT mid-video (`lut3d` has no runtime `file` command), so the script writes one LUT per moment (checked 15 times a second; a new LUT when a setting moves more than 0.2%) and chains them, each with `enable` for its own slice. It adds a few minutes to a render.
+- **Don't lift twice:** with shadow keys, keep the look's own curve lift modest. Doubling up made the shadows hazy (QC black 42–58).
 
 ### Pipeline, in order (16-bit until the final dither)
 
