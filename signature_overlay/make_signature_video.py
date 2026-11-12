@@ -446,13 +446,13 @@ def qc_report(path, t_end, box, samples=10):
     ]
 
 
-def ink_contrast(path, t, k):
+def ink_contrast(path, t, k, box=INK_BOX):
     """Contrast of white ink against the picture right under it, just before the pen starts."""
     w, h = even(OUT_W * k), even(OUT_H * k)
     f = ff_frame(path, t, "", w, h, pix="yuv420p")
     if f is None:
         return None
-    y = f[0][int(INK_BOX[1] * k):int(INK_BOX[3] * k), int(INK_BOX[0] * k):int(INK_BOX[2] * k)]
+    y = f[0][int(box[1] * k):int(box[3] * k), int(box[0] * k):int(box[2] * k)]
     lum = look_lut.srgb_decode(np.clip((np.percentile(y, 75) - 16) / 219, 0, 1))
     return (1.0 + 0.05) / (lum + 0.05)
 
@@ -544,6 +544,16 @@ def render(bg, sig, a):
     elif rot == 270:
         ix0, iy0, ix1, iy1, cw, ch = iy0, cw - 1 - ix1, iy1, cw - 1 - ix0, ch, cw
     box_4k = a.ink_box or INK_BOX
+    fit_w4 = min(OUT_W, OUT_H * info["w"] / info["h"])          # the picture's size in the 4K frame
+    fit_h4 = min(OUT_H, OUT_W * info["h"] / info["w"])
+    if a.fit and not a.ink_box and min(fit_w4 / OUT_W, fit_h4 / OUT_H) < 0.99:
+        # Whole-picture framing: the signature shrinks with the picture. Its ink keeps the usual
+        # width relative to the picture's short side (1056 of 2160 px = 48.9%, as on a vertical
+        # video), and sits at the exact center of the picture.
+        iw4 = (INK_BOX[2] - INK_BOX[0]) / OUT_W * min(fit_w4, fit_h4)
+        ih4 = iw4 * (iy1 - iy0) / (ix1 - ix0)
+        cx, cy = OUT_W / 2, OUT_H / 2
+        box_4k = (round(cx - iw4 / 2), round(cy - ih4 / 2), round(cx + iw4 / 2), round(cy + ih4 / 2))
     s = (box_4k[2] - box_4k[0]) * k / (ix1 - ix0)
     sw, sh = even(cw * s), even(ch * s)
     ox, oy = math.floor(box_4k[0] * k - ix0 * s), math.floor(box_4k[1] * k - iy0 * s)
@@ -691,7 +701,7 @@ def render(bg, sig, a):
           f"black hold to {total:.2f} s")
     print(f"placement  : signature scaled to {sw}x{sh} at x={ox} y={oy} in {W}x{H}"
           + (f", turned {rot} deg clockwise" if rot else "") + ("  + soft shadow" if a.ink_shadow else "")
-          + (f"  (ink box {','.join(map(str, box_4k))})" if a.ink_box else ""))
+          + (f"  (ink box {','.join(map(str, box_4k))})" if tuple(box_4k) != INK_BOX else ""))
     tweaks = "".join(f" {k} {v}" for k, v in (("strength", a.strength), ("hues", a.hues),
                                                 ("hue-shift", a.hue_shift)) if v is not None)
     print("look       : " + (grade_note if a.no_grade else f"{base_look}{tweaks}, {grade_note}")
@@ -723,7 +733,7 @@ def render(bg, sig, a):
         out_shots = sorted((*window(sa, sb), look) for sa, sb, look in segments)
         for line in shot_table(check, out_shots, fade_start, qc_box):
             print("  " + line)
-    contrast = None if (hdr_out or a.ink_box or rot) else ink_contrast(check, max(start - 0.1, 0), ck)
+    contrast = None if (hdr_out or rot) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k)
     if contrast is not None:
         verdict = "ok  " if contrast >= MIN_INK_CONTRAST or a.ink_shadow else "WARN"
         print(f"  {verdict} signature contrast {contrast:4.1f}:1 against the picture behind it "
