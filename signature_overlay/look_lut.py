@@ -326,7 +326,9 @@ def fit_gamut(lab, steps=22):
 #                     the brightness taken away, so a washed-out sunlit peak turns gold and a gold one
 #                     barely changes. "hue" (degrees per unit of brightness removed beyond
 #                     "hue_from", minus = toward orange) turns clearly washed-out ones back from
-#                     the yellow the camera's highlight roll-off gives them. Neutral and cool colors (snow, sky) are untouched.
+#                     the yellow the camera's highlight roll-off gives them. "strength_keys"
+#                     [[t, 0-1], ...] limits it to the moments that need it; at 0 it's off. Easing
+#                     brightness flattens texture, so use it only where highlights are washed out. Neutral and cool colors (snow, sky) are untouched.
 # Nov 2026 lesson: an earlier version moved shadows and highlights by different amounts that changed
 # over time; that squeezed the midtones and made all the browns shift at 12 s. Keep time-varying
 # changes uniform (exposure) or confined to the darkest tones.
@@ -342,12 +344,14 @@ def _key_at(keys, t):
 
 
 def has_time_keys(look):
-    return any(look.get(k) for k in TIME_KEYS)
+    return any(look.get(k) for k in TIME_KEYS) or bool((look.get("warm_highlights") or {}).get("strength_keys"))
 
 
 def moment(look, t):
-    """(exposure offset, shadow lift) at clip time t."""
-    return _key_at(look.get("exposure_offsets"), t), _key_at(look.get("shadow_lift_keys"), t)
+    """(exposure offset, shadow lift, warm-highlight strength) at clip time t."""
+    wh = look.get("warm_highlights") or {}
+    return (_key_at(look.get("exposure_offsets"), t), _key_at(look.get("shadow_lift_keys"), t),
+            _key_at(wh.get("strength_keys"), t) if wh.get("strength_keys") else 1.0)
 
 
 def _shift_luma(rgb, y_new):
@@ -358,8 +362,10 @@ def _shift_luma(rgb, y_new):
 def pre_transform(look, t=None):
     """The step before the look's grade (exposure offset and shadow lift at time t, then the warm
     highlight rule), as a function on encoded RGB; None if the look uses none of them."""
-    offset, lift = moment(look, t) if (t is not None and has_time_keys(look)) else (0.0, 0.0)
+    offset, lift = moment(look, t)[:2] if (t is not None and has_time_keys(look)) else (0.0, 0.0)
     wh = look.get("warm_highlights")
+    if wh and wh.get("strength_keys") and t is not None and _key_at(wh["strength_keys"], t) <= 0:
+        wh = None
     if not offset and not lift and not wh:
         return None
 
@@ -375,12 +381,13 @@ def pre_transform(look, t=None):
         if lift:
             u = np.clip((out @ LUMA709) / 0.4, 0, 1)
             out = np.clip(out + (lift * 6.75 * u * (1 - u) ** 2)[..., None], 0, 1)
-        if wh:
+        strength = _key_at(wh.get("strength_keys"), t) if (wh and wh.get("strength_keys") and t is not None) else 1.0
+        if wh and strength > 0:
             knee, ceil, per = wh.get("knee", 0.62), wh.get("ceiling", 0.70), wh.get("color", 5.0)
             y = out @ LUMA709
             warm = _smoothstep(0.0, 0.03, out[..., 0] - out[..., 2])
             eased = np.where(y > knee, knee + (ceil - knee) * (1 - np.exp(-np.maximum(y - knee, 0) / (ceil - knee))), y)
-            y2 = y + (eased - y) * warm
+            y2 = y + (eased - y) * warm * strength
             out = _shift_luma(out, y2)
             k = 1 + per * (y - y2)
             yy = out @ LUMA709
