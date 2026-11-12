@@ -354,6 +354,42 @@ def write_cube_job(job):
     return look_lut.write_cube(*job)
 
 
+def forest_matte(mt, pw, ph, work_w=480):
+    """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the darker forest below the peak,
+    same size and format. Darkness x fade-in from the top, blurred; then times "not sunlit-warm and
+    not sky", unblurred, so the peak and sky stay exactly as they are. See look_lut forest_boost."""
+    d0, d1 = mt.get("dark", (0.40, 0.60))
+    t0, t1 = mt.get("top", (0.22, 0.42))
+    w0, w1 = mt.get("warm_bright", (0.48, 0.60))
+    s0, s1 = mt.get("sky", (0.75, 0.88))
+    sigma = max(0.5, mt.get("blur", 6 / 480) * work_w)
+    wh = even(work_w * ph / pw)
+    rgb = "st(0,r(X,Y)/65535);st(1,g(X,Y)/65535);st(2,b(X,Y)/65535);st(3,0.2126*ld(0)+0.7152*ld(1)+0.0722*ld(2));"
+    q = (rgb + f"st(5,clip((ld(3)-{d0})/{d1 - d0},0,1));st(5,1-ld(5)*ld(5)*(3-2*ld(5)));"
+         f"st(6,clip((Y/H-{t0})/{t1 - t0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));65535*ld(5)*ld(6)")
+    keep = (rgb + "st(4,clip((ld(0)-ld(2))/0.03,0,1));st(4,ld(4)*ld(4)*(3-2*ld(4)));"
+            f"st(5,clip((ld(3)-{w0})/{w1 - w0},0,1));st(5,ld(5)*ld(5)*(3-2*ld(5)));"
+            f"st(6,clip((ld(3)-{s0})/{s1 - s0},0,1));st(6,ld(6)*ld(6)*(3-2*ld(6)));"
+            "65535*clip(1-ld(4)*ld(5)-ld(6),0,1)")
+    return (f"scale={work_w}:{wh}:flags=area,format=gbrp16le,split[fq][fk];"
+            f"[fq]geq=r='{q}':g='{q}':b='{q}',gblur=sigma={sigma:.2f}[fq2];"
+            f"[fk]geq=r='{keep}':g='{keep}':b='{keep}'[fk2];"
+            f"[fq2][fk2]blend=all_mode=multiply,scale={pw}:{ph}:flags=bilinear,format=gbrp16le")
+
+
+def boost_steps(look, t_from, t_to, rate=15, tol=0.005):
+    """[(start, middle), ...] slices where the forest boost is constant enough for one LUT."""
+    ticks = np.arange(t_from, t_to, 1.0 / rate)
+    starts, last = [], None
+    for t in ticks:
+        v = look_lut.forest_gain_at(look, t)
+        if last is None or abs(v - last) > tol:
+            starts.append(float(t))
+            last = v
+    ends = starts[1:] + [t_to]
+    return [(st, (st + en) / 2) for st, en in zip(starts, ends)]
+
+
 def region_matte(mt, pw, ph, work_w=480):
     """Filter chain: picture (16-bit RGB, pw x ph) -> soft mask of the region, same size and format.
     Built at work_w wide: warm x bright x top-of-picture, blurred and scaled by gain, then times
@@ -662,7 +698,7 @@ def render(bg, sig, a):
         grade, grade_note = LEGACY_LOOKS[base_look], "legacy per-channel filters"
     else:
         LUT_DIR.mkdir(parents=True, exist_ok=True)
-        luts, region_luts, region_spec = [], [], None
+        luts, region_luts, region_spec, boost_luts, boost_spec = [], [], None, [], None
         for i, (sa, sb, look) in enumerate(segments, 1):
             lumas = (sample_lumas(bg, [t0 + sa + (sb - sa) * f for f in (0.15, 0.4, 0.65, 0.9)], to_rgb, sample)
                      if multi else overview)
@@ -695,6 +731,20 @@ def render(bg, sig, a):
                     if rjobs:
                         region_luts.append(f"lut3d=file={rjobs[j][0].name}:interp=tetrahedral:enable='{on}'")
                     start_s = end_s
+                if spec.get("forest_boost"):
+                    fb = spec["forest_boost"]
+                    bsteps = boost_steps(spec, t0, t0 + bg_end)
+                    bb = [st - t0 for st, _ in bsteps[1:]] + [None]
+                    start_b = 0.0
+                    for j, ((_, mid), end_b) in enumerate(zip(bsteps, bb)):
+                        gain = look_lut.forest_gain_at(spec, mid)
+                        bpath = LUT_DIR / f"{Path(name).stem}_b{j:03d}.cube"
+                        look_lut.write_boost_cube(bpath, gain, fb.get("green_extra", 1.5))
+                        on = f"gte(t\\,{start_b:.4f})" + (f"*lt(t\\,{end_b:.4f})" if end_b is not None else "")
+                        boost_luts.append(f"lut3d=file={bpath.name}:interp=tetrahedral:enable='{on}'")
+                        start_b = end_b
+                    boost_spec = fb
+                    notes.append(f"forest brightened through a mask ({len(bsteps)} boost steps)")
                 if rjobs:
                     region_spec = spec["region_grade"]
                     notes.append(f"{spec.get('region_grade', {}).get('name', 'region')} graded separately through a mask "
@@ -730,19 +780,24 @@ def render(bg, sig, a):
     # RGB -> 16-bit YUV with the color space stated (untagged clips otherwise fail with
     # "no path between colorspaces"), then dither down to 8-bit.
     to_yuv = "zscale=pin=bt709:tin=bt709:p=bt709:t=bt709:m=bt709:r=tv"
-    if not (graded and region_luts):
-        region_luts = []
+    if not graded:
+        region_luts, boost_luts = [], []
     if hdr_out:
         picture = f"format=yuv420p10le,{out_tags}"
     elif a.no_grade:
         picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p,{TAGS}"
     else:
+        head = to_rgb
+        if boost_luts:
+            # Brighten the forest like an exposure increase, only inside its mask, before the grade.
+            head = (f"{to_rgb},split=3[fo][fb][fm];[fb]{','.join(boost_luts)}[fb2];"
+                    f"[fm]{forest_matte(boost_spec.get('matte', {}), pw, ph)}[fm2];[fo][fb2][fm2]maskedmerge")
         if region_luts:
             # Two grades of the same frame, blended through a soft mask of the region.
-            graded_rgb = (f"{to_rgb},split=3[rga][rgb][rgm];[rga]{grade}[rga2];[rgb]{','.join(region_luts)}[rgb2];"
+            graded_rgb = (f"{head},split=3[rga][rgb][rgm];[rga]{grade}[rga2];[rgb]{','.join(region_luts)}[rgb2];"
                           f"[rgm]{region_matte(region_spec.get('matte', {}), pw, ph)}[rgm2];[rga2][rgb2][rgm2]maskedmerge")
         else:
-            graded_rgb = f"{to_rgb},{grade}"
+            graded_rgb = f"{head},{grade}"
         picture = (f"{graded_rgb},{SHARPEN_RGB},{to_yuv},format=yuv444p16le,{SHARPEN_YUV},"
                    f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,

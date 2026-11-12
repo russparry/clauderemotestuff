@@ -373,9 +373,39 @@ def region_adjust(rgb, exposure, color, hue):
     return out
 
 
+# forest_boost: brighten the darker forest like an exposure increase (a gain on the code values, so
+# its color and contrast are kept, unlike a lift that adds gray), only inside a soft mask the
+# script builds from each frame: darker areas below the peak (blurred, fading in from "top"), with
+# sunlit warm highlights and sky/snow cut out sharply. Applied before the look.
+#   "keys":        [[t, gain], ...]  1 = off
+#   "green_extra": evergreens (green above red) get gain ** green_extra, since very dark greens
+#                  gain less from a multiply
+#   "matte":       {"dark": [a, b], "top": [a, b], "warm_bright": [a, b], "sky": [a, b], "blur": f}
+def forest_gain_at(look, t):
+    fb = look.get("forest_boost")
+    if not fb or t is None:
+        return 1.0
+    return _key_at(fb["keys"], t)
+
+
+def forest_boost(rgb, gain, green_extra=1.5):
+    g = _smoothstep(0.0, 0.02, rgb[..., 1] - rgb[..., 0])
+    return np.clip(rgb * (gain ** (1 + (green_extra - 1) * g))[..., None], 0, 1)
+
+
+def write_boost_cube(path, gain, green_extra=1.5, size=33):
+    x = np.linspace(0, 1, size)
+    bb, gg, rr = np.meshgrid(x, x, x, indexing="ij")
+    out = forest_boost(np.stack([rr, gg, bb], -1).reshape(-1, 3), gain, green_extra)
+    with open(path, "w", encoding="ascii") as f:
+        f.write(f'TITLE "forest boost x{gain:.3f}"\nLUT_3D_SIZE {size}\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n')
+        np.savetxt(f, out, fmt="%.6f")
+    return path
+
+
 def has_time_keys(look):
     return (any(look.get(k) for k in TIME_KEYS) or bool((look.get("warm_highlights") or {}).get("strength_keys"))
-            or bool((look.get("region_grade") or {}).get("keys")))
+            or bool((look.get("region_grade") or {}).get("keys")) or bool((look.get("forest_boost") or {}).get("keys")))
 
 
 def moment(look, t):
