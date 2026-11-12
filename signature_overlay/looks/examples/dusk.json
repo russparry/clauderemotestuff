@@ -1,0 +1,73 @@
+{
+  "notes": "Example from a past project (DJI dusk lake, Nov 2026): strong contrast, sunset kept orange, reds/oranges/magentas/blues up, noise reduction for pushed low light.",
+  "curve": [
+    [
+      0,
+      0
+    ],
+    [
+      0.08,
+      0.055
+    ],
+    [
+      0.25,
+      0.24
+    ],
+    [
+      0.45,
+      0.51
+    ],
+    [
+      0.65,
+      0.77
+    ],
+    [
+      0.85,
+      0.94
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "shadows_ab": [
+    -0.004,
+    -0.01
+  ],
+  "highlights_ab": [
+    0.008,
+    0.016
+  ],
+  "hue_shifts": [
+    [
+      85,
+      35,
+      -8
+    ]
+  ],
+  "chroma_gains": [
+    [
+      25,
+      30,
+      1.25
+    ],
+    [
+      65,
+      30,
+      1.2
+    ],
+    [
+      330,
+      35,
+      1.2
+    ],
+    [
+      240,
+      55,
+      1.15
+    ]
+  ],
+  "vibrance": 0.65,
+  "saturation": 1.22,
+  "denoise": true
+}

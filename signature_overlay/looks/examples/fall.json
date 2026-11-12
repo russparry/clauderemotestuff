@@ -1,0 +1,77 @@
+{
+  "notes": "Example from a past project (IMG_5167, golden aspens, Oct 2026): yellows nudged toward warm gold, golds up, warm highlights / cool shadows.",
+  "curve": [
+    [
+      0,
+      0
+    ],
+    [
+      0.06,
+      0.045
+    ],
+    [
+      0.25,
+      0.25
+    ],
+    [
+      0.5,
+      0.56
+    ],
+    [
+      0.75,
+      0.82
+    ],
+    [
+      0.92,
+      0.95
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "shadows_ab": [
+    -0.003,
+    -0.008
+  ],
+  "highlights_ab": [
+    0.004,
+    0.01
+  ],
+  "hue_shifts": [
+    [
+      95,
+      30,
+      -6
+    ]
+  ],
+  "chroma_gains": [
+    [
+      85,
+      35,
+      1.1
+    ],
+    [
+      142,
+      35,
+      1.05
+    ],
+    [
+      345,
+      35,
+      1.12
+    ],
+    [
+      25,
+      25,
+      1.12
+    ],
+    [
+      230,
+      45,
+      0.94
+    ]
+  ],
+  "vibrance": 0.25,
+  "saturation": 1.1
+}
