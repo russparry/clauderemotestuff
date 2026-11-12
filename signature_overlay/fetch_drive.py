@@ -78,13 +78,20 @@ def _filename(headers):
 def download(file_id, dest_dir, name=None):
     url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
     r = _open(url)
+    if "accounts.google.com" in r.url or "/signin" in r.url or "ServiceLogin" in r.url:
+        r.close()
+        raise PermissionError(f"File {file_id} is private: Google asked to sign in. In Drive, set its "
+                              "sharing (General access) to 'Anyone with the link'.")
     if r.headers.get_content_type() == "text/html":
         # Large-file or virus-scan warning page: submit its form to get the file itself.
         page = r.read().decode("utf-8", "replace")
         r.close()
         form = re.search(r'<form[^>]+action="([^"]+)"', page)
         fields = dict(re.findall(r'<input type="hidden" name="([^"]+)" value="([^"]*)"', page))
-        if not form or not fields:
+        if form and ("signin" in form.group(1) or "ServiceLogin" in page):
+            raise PermissionError(f"File {file_id} is private: Google asked to sign in. In Drive, set "
+                                  "its sharing (General access) to 'Anyone with the link'.")
+        if not form or not fields or not form.group(1).startswith("http"):
             msg = re.sub(r"<[^>]+>", " ", page)
             msg = re.sub(r"\s+", " ", html.unescape(msg)).strip()[:300]
             sys.exit(f"Drive didn't send file {file_id}. Is it shared as 'Anyone with the link'?\n  {msg}")
@@ -125,13 +132,18 @@ def main():
     dest = Path(a.to)
     if not dest.is_absolute():
         dest = (Path.cwd() / dest).resolve()
+    failed = 0
     for link in a.links:
         kind, fid = parse_link(link)
-        if kind == "file":
-            download(fid, dest, a.name)
-        else:
-            for file_id, fname in folder_files(fid):
+        items = [(fid, a.name)] if kind == "file" else folder_files(fid)
+        for file_id, fname in items:
+            try:
                 download(file_id, dest, fname)
+            except PermissionError as e:
+                print(f"NOT DOWNLOADED: {e}")
+                failed += 1
+    if failed:
+        sys.exit(f"{failed} file(s) could not be downloaded.")
 
 
 if __name__ == "__main__":
