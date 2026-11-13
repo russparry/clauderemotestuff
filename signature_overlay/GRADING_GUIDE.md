@@ -125,6 +125,19 @@ story), which took eleven rounds to get right. Read this before grading anything
 - Measure texture where the user cares about detail (mean difference of each pixel's lightness from
   its neighbours); a rule that eases brightness flattens it.
 
+## The camera's official log conversion first
+
+Grading order (what the user described, and what this pipeline does): the camera's log ->
+Rec.709 conversion, exposure and contrast, curves and color, masks, sharpening last (no dehaze,
+grain or bloom: the user wants it clean). For DJI D-Log M the conversion is DJI's own LUT
+(`"input_lut": "dji_flip_dlogm_to_rec709.cube"`, from `get_dji_lut.py`), applied inside the look
+with ffmpeg-identical tetrahedral interpolation; measured levels are skipped after it. On the lake
+clip (Nov 2026) it kept the glow's texture better than our own levels-and-curve conversion
+(96% vs 87% of raw, color texture 0.91 vs 1.68 with raw at 0.82, fewer pixels at the screen's
+color limit) and renders the sun core richer and yellower and the sky less blue. Build only the
+user's own requests on top (there: blue-violet mountains via `shade_cool`, re-banded because DJI's
+conversion is darker in the midtones) and re-measure every band against the new base.
+
 ## Output quality (10-bit, measured)
 
 The user: "always go by the numbers", "keep the 10 bit color regardless", and the 8-bit master

@@ -117,10 +117,14 @@ MASTER_CRF = 10                        # x265 quality for masters (lower = more 
 # CRF 10 lands at the drone's own data rate (130 Mb/s), i.e. about the original's file size.
 
 
-def master_enc(crf=MASTER_CRF, lossless=False):
+def master_enc(crf=MASTER_CRF, lossless=False, cap_kbps=None, preset="medium"):
+    """10-bit HEVC master. cap_kbps: a data-rate ceiling (with --max-mb) so the file fits a size
+    limit, e.g. the app's 400 MiB: quality as set by crf wherever it fits under the ceiling."""
     params = ("log-level=error:colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited"
               + (":lossless=1" if lossless else ""))
-    return ["-c:v", "libx265", "-preset", "medium", *([] if lossless else ["-crf", f"{crf:g}"]),
+    # bufsize = 1 s of data: over a whole clip the average stays within a few % of the ceiling
+    cap = ["-maxrate", f"{cap_kbps}k", "-bufsize", f"{cap_kbps}k"] if cap_kbps and not lossless else []
+    return ["-c:v", "libx265", "-preset", preset, *([] if lossless else ["-crf", f"{crf:g}"]), *cap,
             "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1", "-x265-params", params,
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
             "-c:a", "aac", "-b:a", "192k"]
@@ -833,6 +837,8 @@ def render(bg, sig, a):
             luts.append(f"lut3d=file={name}:interp=tetrahedral" + (":" + enable([window(sa, sb)]) if multi else ""))
             levels = (f"levels {black:.3f}-{white:.3f}"
                       + (f" (measured {measured[0]:.3f}-{measured[1]:.3f})" if measured else " (off)"))
+            if spec.get("input_lut"):
+                levels = f"camera conversion {spec['input_lut']} first (measured levels not used)"
             shot_lines.append(f"shot {i:2d}  {sa:6.2f}-{sb:6.2f} s  {look:6s}  {levels}")
         grade = ",".join(luts)
         grade_note = f"{len(segments)} shots, perceptual LUT per shot" if multi else f"perceptual LUT, {levels}"
@@ -907,7 +913,8 @@ def render(bg, sig, a):
            "-map", "[vm]",
            *(hdr_enc(hdr_out, "ultrafast" if a.preview else "medium", 24 if a.preview else 16,
                      dovi=info["dovi"] and native) if hdr_out
-             else PREVIEW_ENC if a.preview else master_enc(a.crf, a.lossless)), *audio_m,
+             else PREVIEW_ENC if a.preview else master_enc(
+                 a.crf, a.lossless, int(a.max_mb * 8000 * 0.95 / total) if a.max_mb else None, a.preset)), *audio_m,
            "-t", f"{total:.4f}", str(tmp_m)]
 
     print(f"\n=== {bg.name}")
@@ -1029,6 +1036,10 @@ def main():
     ap.add_argument("--to", dest="trim_to", type=float, help="use the clip only up to this second")
     ap.add_argument("--crf", type=float, default=MASTER_CRF,
                     help=f"master quality, 10-bit HEVC (default {MASTER_CRF}; lower keeps more detail, bigger file)")
+    ap.add_argument("--max-mb", type=float,
+                    help="fit the master under this size in MB (395 for the app's 400 MiB limit): CRF quality "
+                         "with a data-rate ceiling, rendered directly (no second compression)")
+    ap.add_argument("--preset", default="medium", help="x265 speed/efficiency preset for the master (default medium)")
     ap.add_argument("--lossless", action="store_true",
                     help="lossless 10-bit master (huge; a reference for measuring what encoding loses)")
     ap.add_argument("--own-frame", action="store_true",

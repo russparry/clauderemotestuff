@@ -29,13 +29,21 @@ Read before working:
    "clauderemotestuff" allows `drive.google.com` and `drive.usercontent.google.com`):
    `python3 signature_overlay/fetch_drive.py "<link>"` -> `signature_overlay/before/`. A private
    file asks Google to sign in; the script says so: ask the user to change the sharing.
-3. Grade with `signature_overlay/grade_tools.py` (analyze, stills, keys, check) and render with
+3. DJI log footage (D-Log M): start the look from DJI's official conversion, `"input_lut"` in the
+   look (`python3 signature_overlay/get_dji_lut.py` fetches it from DJI and checks it; the
+   environment allows `www.dji.com` and `terra-1-g.djicdn.com`). The user asked for it, and it
+   measured better than our own conversion (glow texture 96% of raw vs 87%). The file's encoder
+   tag names the drone (`DJI FLIP`); another model needs its own LUT added to `get_dji_lut.py`.
+4. Grade with `signature_overlay/grade_tools.py` (analyze, stills, keys, check) and render with
    `make_signature_video.py`; a 26 s 4K60 render with masks takes 15-20 minutes (run it in the
    background). Previews (`--preview`) hide grain: test the darkest seconds at full size.
-4. Deliver: send the render in the app (it takes 400 MiB at most; a bigger master goes as
-   `phone_copy.py <master> <out> --target 395`), and push a phone copy to the repo's `videos` branch
-   (`phone_copy.py`: 10-bit 4K HEVC under 100 MB; public is fine, the user said so for all their videos).
-   The user downloads from the GitHub app. GitHub releases can't be created from these sessions.
+5. Deliver: the app (chat) takes 400 MiB at most and is the user's main way to get videos, so
+   render the deliverable directly at that size: `--max-mb 415 --crf 9 --preset slow` (best
+   measured quality that fits; re-compressing a bigger master costs detail). Then a 10-bit phone
+   copy under 100 MB (`phone_copy.py`) on the repo's `videos` branch, and give the user its Safari
+   link `https://raw.githubusercontent.com/russparry/clauderemotestuff/videos/<name>.mp4` (repo
+   is public; the user couldn't find downloads in the GitHub app). A master over 400 MiB can't
+   reach the user at all from these sessions. GitHub releases can't be created either.
    Keep earlier versions (`4k/versions/`, `graded/versions/`): renders overwrite. Videos aren't
    committed to the code branches.
 
