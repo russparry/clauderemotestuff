@@ -16,8 +16,8 @@ Two kinds of jobs:
 Read before working:
 - `signature_overlay/GRADING_GUIDE.md`: how to grade any video, the user's preferences, the
   workflow with `grade_tools.py`, and every mistake made on the Nov 2026 drone clip with its fix.
-- `signature_overlay/SIGNATURE_OVERLAY_RECIPE.md`: signature timing, placement, framing (`--fit`
-  for horizontal clips), HDR handling, and the grading pipeline's internals.
+- `signature_overlay/SIGNATURE_OVERLAY_RECIPE.md`: signature timing, placement, framing (`--own-frame`
+  or `--fit` for horizontal clips), HDR handling, and the grading pipeline's internals.
 
 ### Each session
 
@@ -46,6 +46,9 @@ Read before working:
   No two-toned trees or objects (no position-based rules that cross an object).
 - Standard color (SDR) output; no HDR surprises. Keep 4K.
 - Signature videos: ask for the start time if not given ("as late as you can" = `--start latest`);
-  horizontal clips: ask once, fill the frame or `--fit` (the drone clip used `--fit`, signature
-  shrunk to the picture and centered). No Instagram copies. No `--ink-shadow` unless asked.
+  horizontal clips: ask once: `--own-frame` (stays horizontal 4K, whole shot, no bars; the lake
+  sunset, "whole shot but drop the black bars"), `--fit` (vertical with black bars; the first
+  drone clip) or fill the vertical frame (crops the sides). Signature centered, 48.9% of the
+  picture's height wide. An end time like "end at 31 s with 2 s after the fade" fixes the start:
+  end - hold - fade - 0.5 - draw time (0.73 s). No Instagram copies. No `--ink-shadow` unless asked.
 - Do only what was asked; ask at most one question, only when the request can't be done as stated.
