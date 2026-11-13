@@ -125,6 +125,26 @@ story), which took eleven rounds to get right. Read this before grading anything
 - Measure texture where the user cares about detail (mean difference of each pixel's lightness from
   its neighbours); a rule that eases brightness flattens it.
 
+## Output quality (10-bit, measured)
+
+The user: "always go by the numbers", "keep the 10 bit color regardless", and the 8-bit master
+"doesn't look as sharp... the edit should be the same size as the original no?" Measured on the
+lake clip: 3 s rendered `--lossless`, then encoded several ways and compared with it (fine texture
+kept in the most textured 20% of the picture, and its correlation with the reference):
+
+| Encoding | Data rate | Detail | Texture match |
+|---|---|---|---|
+| 8-bit H.264 CRF 17 (old master) | 46 Mb/s | 84% | 0.76 |
+| 10-bit HEVC 2-pass, phone copy size | 21 Mb/s | 85% | 0.84 |
+| 10-bit HEVC CRF 12 / **10** / 8 | 81 / **124** / 180 Mb/s | 86 / **89** / 92% | 0.84 / **0.89** / 0.92 |
+
+Masters are now 10-bit HEVC CRF 10 (`--crf`), about the drone's own 130 Mb/s and file size. The
+grade itself runs in 16-bit. To test a new setting, render a few seconds with `--lossless` and
+compare (the script is easy to rebuild: PSNR/SSIM from ffmpeg, plus high-pass detail on 16-bit
+luma frames). Check every 10-bit render's QC: the first 10-bit signature render came out with
+black at 0 instead of 64 (the ink layer carried a full-range tag; fixed), and QC's "black Y 0,
+crushed 22%" is what caught it.
+
 ## Delivering
 
 - Send the full render in the app (160-220 MB for 26 s) and a before/after crop of what changed.
