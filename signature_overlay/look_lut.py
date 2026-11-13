@@ -38,7 +38,12 @@ import numpy as np
 #   chroma_gains   [[hue, half-width, gain], ...]     1.2 = that band 20% more colorful
 #   vibrance       boosts dull colors more than vivid ones (0 = off)
 #   saturation     overall color strength multiplier
-#   denoise        true = light noise reduction first (for pushed low-light footage)
+#   cool_tint      {"ab": [a, b], "keep": [[from hue, to hue], ...], "dark": [l0, l1]}: cooler
+#                  white balance except for the hue ranges in keep (default warm, [[330, 100]]),
+#                  fading out below lightness l1 (default [0.25, 0.5])
+#   sky_deepen     {"amount": 0.07, "hue": 245, "width": 45, "bright": [0.82, 0.97]}: darken
+#                  near-white blue sky a little so it can show more blue (like a polarizer)
+#   denoise       true = light noise reduction first (for pushed low-light footage)
 #   exposure_offsets, shadow_lift_keys, warm_highlights: see "changes over time" below
 #   protect_skin   false = no skin guard, for footage with no people (golden light on rock or
 #                  foliage sits in the skin hue band and would otherwise be held back)
@@ -103,7 +108,11 @@ def scaled(look, s):
             "hue_shifts": [(h, w, s * d) for h, w, d in look["hue_shifts"]],
             "chroma_gains": [(h, w, lerp(g, 1)) for h, w, g in look["chroma_gains"]],
             "vibrance": s * look["vibrance"], "saturation": lerp(look["saturation"], 1),
-            "contrast_chroma": s * look.get("contrast_chroma", CONTRAST_CHROMA), "strength": 1}
+            "contrast_chroma": s * look.get("contrast_chroma", CONTRAST_CHROMA), "strength": 1,
+            **({"cool_tint": {**look["cool_tint"], "ab": [s * v for v in look["cool_tint"]["ab"]]}}
+               if look.get("cool_tint") else {}),
+            **({"sky_deepen": {**look["sky_deepen"], "amount": s * look["sky_deepen"]["amount"]}}
+               if look.get("sky_deepen") else {})}
 
 
 def adjust(look, hues=None, hue_shift=None, strength=None, width=30.0):
@@ -235,6 +244,15 @@ class GamutEdge:
         return ((1 - tl) * (1 - th) * t[i0, j0] + tl * (1 - th) * t[i0 + 1, j0]
                 + (1 - tl) * th * t[i0, j0 + 1] + tl * th * t[i0 + 1, j0 + 1])
 
+def _hue_window(h, start, end, fade=15.0):
+    """1 for hues from start round to end (counterclockwise, wrapping at 360), easing to 0
+    over `fade` degrees outside."""
+    span = (end - start) % 360
+    d = (np.asarray(h, dtype=float) - start) % 360
+    outside = np.where(d <= span, 0.0, np.minimum(d - span, 360 - d))
+    return 1 - _smoothstep(0, fade, outside)
+
+
 def _smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0, 1)
     return t * t * (3 - 2 * t)
@@ -262,6 +280,16 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
 
     L2 = tone(L)
 
+    # 2b. Deepen a bright blue sky (what a polarizer does): near-white blue can't hold more blue
+    # on screen, so blue that bright comes down a little first. Weighted by hue and by how
+    # colored the pixel is (snow and clouds stay put), and only above "bright" lightness.
+    sd = p.get("sky_deepen")
+    if sd:
+        w = (_band(h, _hue(sd.get("hue", 245)), float(sd.get("width", 45)))
+             * _smoothstep(*sd.get("chroma", [0.008, 0.02]), C)
+             * _smoothstep(*sd.get("bright", [0.82, 0.97]), L2))
+        L2 = L2 - float(sd["amount"]) * w
+
     # 3. Chroma. A steeper part of the curve adds contrast between channels in an RGB grade;
     # carry most of that into chroma so the look keeps its punch without the hue skew.
     eps = 2e-3
@@ -288,6 +316,20 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     high_w = np.clip((L2 - 0.4) / 0.6, 0, 1) ** 2
     a2 = C2 * np.cos(np.radians(h2)) + shadow_w * p["shadows_ab"][0] + high_w * p["highlights_ab"][0]
     b2 = C2 * np.sin(np.radians(h2)) + shadow_w * p["shadows_ab"][1] + high_w * p["highlights_ab"][1]
+
+    # 5b. Cool tint: a cooler white balance for grays, snow, shaded rock and sky, while the hue
+    # ranges in "keep" (default: warm) keep their own color, so golden light and browns stay
+    # exactly as they were. Depends on color and brightness only (never position). Fades out in
+    # the dark ("dark": [from, to] lightness), where faint colors are mostly noise and a tint
+    # turns dim greens teal.
+    ct = p.get("cool_tint")
+    if ct:
+        keep = np.zeros_like(h)
+        for start, end in ct.get("keep", [[330, 100]]):
+            keep = np.maximum(keep, _hue_window(h, _hue(start), _hue(end)))
+        w = (1 - keep * _smoothstep(0.004, 0.014, C)) * _smoothstep(*ct.get("dark", [0.25, 0.5]), L2)
+        a2 = a2 + w * ct["ab"][0]
+        b2 = b2 + w * ct["ab"][1]
 
     # 6. Gamut: colors that don't fit get their chroma reduced, at the same lightness and hue,
     # until they just fit (exact search, only for the colors that need it).

@@ -79,6 +79,21 @@ story), which took eleven rounds to get right. Read this before grading anything
 | `forest_boost` | Brighten darker areas like an exposure increase (a gain, keeps color and contrast) through a soft mask of dark areas, with sunlit warm highlights and sky cut out. Keys from `grade_tools keys --forest`. Keep the gain at or below about 1.4, `green_extra` 1, add `denoise` (`vaguedenoiser`), no `top` band. |
 | `exposure_offsets`, `shadow_lift_keys`, `warm_highlights` | Earlier tools, superseded on the drone clip: they caused the faded browns, the sudden change and the over-orange peak below. Prefer `forest_boost` / `region_grade`. |
 | `denoise` | `true`: light noise reduction on the whole picture first (pushed low light). |
+| `cool_tint` | A cooler white balance (`ab`, e.g. `[-0.003, -0.013]`) for grays, snow, shade and sky, while the hue ranges in `keep` keep their own color (`[[330, 185]]` = warm through green), fading out in the dark (`dark`). For "cooler, but leave the warm colors". Keep greens in `keep`: dim greens have so little color that the tint turns them teal. |
+| `sky_deepen` | Darkens bright blue sky a little (`amount` 0.07) so it can show more blue, like a polarizer. Needed when the sky is graded near white: there the screen can't show more blue, and a blue chroma gain does nothing. |
+
+### "Make it pop" / "more vivid" / "bluer blues, greener greens" (dusk clip v2, Nov 2026)
+
+- Boost the hues asked for with `chroma_gains` bands that overlap (green 135 x2.2, cyan 190 x1.5,
+  blue 240 x1.9) so in-between hues don't dip; turn the in-between hues toward the target with
+  `hue_shifts` (sky's cyan side +10 toward blue, olive +10 toward green).
+- "Warm colors stay the same": don't raise `saturation`/`vibrance` (they touch every hue);
+  use bands and `cool_tint` with warm kept, then check pixel by pixel that the gold and browns
+  didn't move (they didn't: identical gold, browns' median unchanged).
+- Measure, don't eyeball: per area (sky, pines, browns, gold, grays) chroma and hue for each
+  candidate. That's how the near-white sky (no change at all) and the teal pines showed up.
+- Dim pines (color ~0.01) take a big gain (x2.2) before they read green; check color speckle in
+  the darkest area at full size (it rose ~30%, still invisible).
 
 ## What went wrong, and the fix (drone clip, Nov 2026)
 
@@ -107,7 +122,9 @@ story), which took eleven rounds to get right. Read this before grading anything
 
 ## Delivering
 
-- Send the full render in the app (it's large, 160-220 MB) and a before/after crop of what changed.
+- Send the full render in the app (160-220 MB for 26 s) and a before/after crop of what changed.
+  The app refuses files over 400 MiB (a 45 s 4K60 render is about 420 MiB): send the phone copy
+  instead.
 - Phone copy for the GitHub app: `python3 phone_copy.py <render> <videos checkout>/<name>.mp4`
   (4K HEVC under 100 MB), committed to the repo's `videos` branch (public is fine for the user's
   videos). The user opens the repo in the GitHub app, switches to `videos`, downloads, Save Video.
