@@ -1,7 +1,8 @@
 # Videos
 
-Finished videos in 4K, HEVC (H.265), so each file stays under GitHub's 100 MB limit. On a phone:
-tap a file, download it, then Share -> Save Video.
+Finished videos in 4K, HEVC (H.265), so each file stays under GitHub's 100 MB limit. On a phone,
+open https://raw.githubusercontent.com/russparry/clauderemotestuff/videos/<name>.mp4 in Safari,
+then Share -> Save Video.
 
 Color graded only (landscape, 3840x2160):
 - `drone_dusk_graded.mp4`: the dusk drone clip (alpenglow on the peaks, sky pan, dark forest with snow).
@@ -9,7 +10,7 @@ Color graded only (landscape, 3840x2160):
 - `drone_dusk_vivid_cool.mp4`: the same clip, more vivid and cooler: bluer sky, greener pines, cool shade and snow; the gold on the peaks unchanged.
 
 Signature videos:
-- `lake_sunset_signature.mp4`: horizontal 4K (3840x2160), the lake sunset with the signature; mountains slate blue-violet against the gold, ends at 31 s.
+- `lake_sunset_signature.mp4`: horizontal 4K (3840x2160), 10-bit, the lake sunset with the signature; DJI's official D-Log M conversion, mountains slate blue-violet against the gold, ends at 31 s.
 - `drone_mountain_final.mp4` (vertical 2160x3840): the latest version (mountain graded separately while the camera washes it out; the forest kept darker and clean, no grain, every tree one even tone).
   Older versions of the same file are in this branch's history.
 - `drone_mountain_v3_trees_fixed.mp4`: an earlier version (the browns shift around 12 s).
