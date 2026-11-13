@@ -79,6 +79,7 @@ story), which took eleven rounds to get right. Read this before grading anything
 | `forest_boost` | Brighten darker areas like an exposure increase (a gain, keeps color and contrast) through a soft mask of dark areas, with sunlit warm highlights and sky cut out. Keys from `grade_tools keys --forest`. Keep the gain at or below about 1.4, `green_extra` 1, add `denoise` (`vaguedenoiser`), no `top` band. |
 | `exposure_offsets`, `shadow_lift_keys`, `warm_highlights` | Earlier tools, superseded on the drone clip: they caused the faded browns, the sudden change and the over-orange peak below. Prefer `forest_boost` / `region_grade`. |
 | `denoise` | `true`: light noise reduction on the whole picture first (pushed low light). |
+| `levels` | `{"white": 0.96}`: replaces the measured white point (raw code value). For a sun or bright glow in the frame: the measured one (99.7th percentile) clips the glow to a white blob. Set it near the brightest raw value and give the curve a shoulder that keeps the brightest sky at about its raw brightness (`[0.88, 0.87], [1, 0.97]`): bright gold can only hold its color below about OKLab L 0.9. |
 | `cool_tint` | A cooler white balance (`ab`, e.g. `[-0.003, -0.013]`) for grays, snow, shade and sky, while the hue ranges in `keep` keep their own color (`[[330, 185]]` = warm through green), fading out in the dark (`dark`). For "cooler, but leave the warm colors". Keep greens in `keep`: dim greens have so little color that the tint turns them teal. |
 | `sky_deepen` | Darkens bright blue sky a little (`amount` 0.07) so it can show more blue, like a polarizer. Needed when the sky is graded near white: there the screen can't show more blue, and a blue chroma gain does nothing. |
 
@@ -108,6 +109,7 @@ story), which took eleven rounds to get right. Read this before grading anything
 | "Tree colors split in half" | Forest mask faded in from the top of the picture | No position-based rules on objects that cross them; the mask depends on darkness only |
 | "Unnatural dark top" on a narrow tree | Backlit treetops are tinted warm, not green, so a greens-only rule skipped them | Don't select by "green"; darkness only |
 | "Whole top left really grainy" | A gain of 2-2.5 on very dark log shadows amplifies the camera's noise; sharpening adds to it | Denoise the boosted area (`vaguedenoiser`), lower `sharpen`, and above all a smaller gain: the user chose darker and clean |
+| Sun glow a white blob, gold gone (lake sunset clip, caught in testing) | Measured white point clipped the brightest 2-3%, and the curve lifted the sun core to where gold can't hold color (lost a third) | `levels.white` near the brightest raw value, curve shoulder keeping the core at raw brightness; measure the core's color vs raw |
 | Diagonal streaks in foliage (caught in testing) | `hqdn3d` at useful strength, and a steep "less gain for the darkest" taper | `vaguedenoiser`; no taper |
 
 ## Checks that would have caught these

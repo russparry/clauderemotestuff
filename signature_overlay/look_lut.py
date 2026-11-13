@@ -41,6 +41,10 @@ import numpy as np
 #   cool_tint      {"ab": [a, b], "keep": [[from hue, to hue], ...], "dark": [l0, l1]}: cooler
 #                  white balance except for the hue ranges in keep (default warm, [[330, 100]]),
 #                  fading out below lightness l1 (default [0.25, 0.5])
+#   levels         {"white": 0.96} (and/or "black"): replaces the measured white/black point (raw
+#                  code value). For a sun or bright glow: the measured white (99.7th percentile)
+#                  clips the glow to white; set it near the brightest raw value and roll off with
+#                  the curve's top instead
 #   sky_deepen     {"amount": 0.07, "hue": 245, "width": 45, "bright": [0.82, 0.97]}: darken
 #                  near-white blue sky a little so it can show more blue (like a polarizer)
 #   denoise       true = light noise reduction first (for pushed low-light footage)
@@ -263,6 +267,8 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     shape (..., 3). Returns encoded RGB."""
     p = load_look(look)
     p = scaled(p, p.get("strength", 1))
+    lv = p.get("levels") or {}
+    black, white = float(lv.get("black", black)), float(lv.get("white", white))
     edge = edge or GamutEdge()
     lab = linear_to_oklab(srgb_decode(rgb))
     L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
