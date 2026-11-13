@@ -41,6 +41,8 @@ import numpy as np
 #   cool_tint      {"ab": [a, b], "keep": [[from hue, to hue], ...], "dark": [l0, l1]}: cooler
 #                  white balance except for the hue ranges in keep (default warm, [[330, 100]]),
 #                  fading out below lightness l1 (default [0.25, 0.5])
+#   input_lut      "dji_flip_dlogm_to_rec709.cube": the camera's official log -> Rec.709 conversion
+#                  (luts/, from get_dji_lut.py), applied first; measured levels are then skipped
 #   levels         {"white": 0.96} (and/or "black"): replaces the measured white/black point (raw
 #                  code value). For a sun or bright glow: the measured white (99.7th percentile)
 #                  clips the glow to white; set it near the brightest raw value and roll off with
@@ -57,6 +59,50 @@ import numpy as np
 #   strength       how much of the look to use: 0.7 = 70% (subtle), 1 = full (default)
 # A hue can be a name from HUES or OKLCH degrees. Bands fall off smoothly (raised cosine).
 LOOKS_DIR = Path(__file__).resolve().parent / "looks"
+LUTS_DIR = Path(__file__).resolve().parent / "luts"      # camera conversions (get_dji_lut.py)
+_CUBES = {}
+
+
+def load_cube(name):
+    """A .cube 3D LUT from luts/ (or a path) as an array [b][g][r][3] (red varies fastest)."""
+    path = Path(name) if Path(name).is_file() else LUTS_DIR / name
+    if path not in _CUBES:
+        if not path.is_file():
+            raise SystemExit(f"{path} not found. Run: python3 get_dji_lut.py")
+        rows = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) == 3:
+                try:
+                    rows.append([float(v) for v in parts])
+                except ValueError:
+                    pass
+        n = round(len(rows) ** (1 / 3))
+        if n ** 3 != len(rows):
+            raise SystemExit(f"{path}: {len(rows)} entries is not a cube")
+        _CUBES[path] = np.array(rows).reshape(n, n, n, 3)
+    return _CUBES[path]
+
+
+def apply_cube(rgb, lut):
+    """Apply a 3D LUT with tetrahedral interpolation (what ffmpeg's lut3d=interp=tetrahedral does)."""
+    n = lut.shape[0]
+    f = np.clip(np.asarray(rgb, dtype=float), 0, 1) * (n - 1)
+    i = np.minimum(np.floor(f).astype(int), n - 2)
+    d = f - i
+    r0, g0, b0 = i[..., 0], i[..., 1], i[..., 2]
+    dr, dg, db = d[..., 0:1], d[..., 1:2], d[..., 2:3]
+    c = lambda dr_, dg_, db_: lut[b0 + db_, g0 + dg_, r0 + dr_]
+    c000, c111 = c(0, 0, 0), c(1, 1, 1)
+    c100, c010, c001 = c(1, 0, 0), c(0, 1, 0), c(0, 0, 1)
+    c110, c101, c011 = c(1, 1, 0), c(1, 0, 1), c(0, 1, 1)
+    out = np.where((dr >= dg) & (dg >= db), c000 + dr * (c100 - c000) + dg * (c110 - c100) + db * (c111 - c110),
+          np.where((dr >= db) & (db >= dg), c000 + dr * (c100 - c000) + db * (c101 - c100) + dg * (c111 - c101),
+          np.where((db >= dr) & (dr >= dg), c000 + db * (c001 - c000) + dr * (c101 - c001) + dg * (c111 - c101),
+          np.where((dg >= dr) & (dr >= db), c000 + dg * (c010 - c000) + dr * (c110 - c010) + db * (c111 - c110),
+          np.where((dg >= db) & (db >= dr), c000 + dg * (c010 - c000) + db * (c011 - c010) + dr * (c111 - c011),
+                   c000 + db * (c001 - c000) + dg * (c011 - c001) + dr * (c111 - c011))))))
+    return out
 HUES = {"red": 29, "orange": 55, "gold": 80, "yellow": 105, "lime": 125, "green": 145, "teal": 175,
         "cyan": 200, "sky": 230, "blue": 260, "purple": 295, "magenta": 330, "pink": 350}
 NEUTRAL = {
@@ -270,6 +316,11 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     shape (..., 3). Returns encoded RGB."""
     p = load_look(look)
     p = scaled(p, p.get("strength", 1))
+    if p.get("input_lut"):
+        # The camera maker's own log -> Rec.709 conversion first ("by the numbers"); it sets black
+        # and white itself, so the levels measured on the log footage don't apply after it.
+        rgb = apply_cube(rgb, load_cube(p["input_lut"]))
+        black, white = 0.0, 1.0
     lv = p.get("levels") or {}
     black, white = float(lv.get("black", black)), float(lv.get("white", white))
     edge = edge or GamutEdge()

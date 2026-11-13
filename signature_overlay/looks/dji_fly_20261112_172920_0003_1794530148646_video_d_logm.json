@@ -1,48 +1,14 @@
 {
-  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake. Streaky pink/orange clouds, blue sky above, mountains in silhouette, a dark neighborhood and fields in front; the drone turns toward the sun, whose glow grows from 16% to 36% of the picture by 30 s. Own look from its hues (red 30-45, orange 45-60, blue 240-255). The measured white point (0.871, 99.7th percentile) clipped the sun glow to a white blob and halved its color, so levels.white 0.96 (near the brightest raw value) and a curve shoulder that keeps the sun core at its raw brightness (OKLab L ~0.90, where gold h~72 can still hold color 0.08; at 0.93 only 0.057). Gold band 72 x1.15; red-orange 38 eased x0.92 (the lake reflection doubled to color 0.10 and read flat orange); blue 240 x1.15, natural. Log footage: saturation 1.3, vibrance 0.5. No people: no skin guard. Foreground left dark (silhouette at sunset; darker and clean). Camera exposure steady (+0.04 at most): no time keys. Toe eased a touch ([0.02,0.017],[0.05,0.045]): the 4K test had 8% of the picture crushed to black in the fields at 27-31 s; this keeps a hint of them for ~4% more grain. v2 (user: 'the most yellow part of the sunset is making the mountains look more brown and washed out... maybe a little more blue hue?'): the grade doubled the haze's reddish-brown on the backlit mountains (color 0.034 -> 0.071, hue 29) and lifted them. shade_cool on the brightness band 0.38-0.48 (mountains 0.39-0.49; fields/brush below 0.34, lake reflection and glow above 0.53): warm color x0.35, tint toward blue-violet, 0.035 deeper -> mountains slate blue-violet (h 273-314). First tries selected by hue too: brush went gray (raw log chroma read as gray), then a field straddling the hue edge went blotchy; selecting by brightness only fixed both. Gold, glow and brush unchanged; lake reflection -10% color at most.",
-  "levels": {
-    "white": 0.96
-  },
+  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake. Streaky pink/orange clouds, blue sky above, mountains in silhouette, a dark neighborhood and fields in front; the drone turns toward the sun, whose glow grows from 16% to 36% of the picture by 30 s. Own look from its hues (red 30-45, orange 45-60, blue 240-255). The measured white point (0.871, 99.7th percentile) clipped the sun glow to a white blob and halved its color, so levels.white 0.96 (near the brightest raw value) and a curve shoulder that keeps the sun core at its raw brightness (OKLab L ~0.90, where gold h~72 can still hold color 0.08; at 0.93 only 0.057). Gold band 72 x1.15; red-orange 38 eased x0.92 (the lake reflection doubled to color 0.10 and read flat orange); blue 240 x1.15, natural. Log footage: saturation 1.3, vibrance 0.5. No people: no skin guard. Foreground left dark (silhouette at sunset; darker and clean). Camera exposure steady (+0.04 at most): no time keys. Toe eased a touch ([0.02,0.017],[0.05,0.045]): the 4K test had 8% of the picture crushed to black in the fields at 27-31 s; this keeps a hint of them for ~4% more grain. v2 (user: 'the most yellow part of the sunset is making the mountains look more brown and washed out... maybe a little more blue hue?'): the grade doubled the haze's reddish-brown on the backlit mountains (color 0.034 -> 0.071, hue 29) and lifted them. shade_cool on the brightness band 0.38-0.48 (mountains 0.39-0.49; fields/brush below 0.34, lake reflection and glow above 0.53): warm color x0.35, tint toward blue-violet, 0.035 deeper -> mountains slate blue-violet (h 273-314). First tries selected by hue too: brush went gray (raw log chroma read as gray), then a field straddling the hue edge went blotchy; selecting by brightness only fixed both. Gold, glow and brush unchanged; lake reflection -10% color at most. v3 (user: 'use DJI's official log conversion... I want 100% quality and texture match'): DJI's own 'DJI Flip D-Log M to Rec.709' v1.0 (get_dji_lut.py) as the first step, matched to ffmpeg's lut3d within 0.004 of an 8-bit step; its tones and colors kept as they are (no curve, saturation 1, no vibrance or hue bands). Measured in the glow at 26 s: brightness texture 96% of raw vs 87% with v2's conversion, color texture 0.91 vs 1.68 (raw 0.82), 50% of glow pixels at the screen's color limit vs 66%. DJI renders the sun core richer and yellower (color 0.145 h 80 vs v2 0.08 h 73) and the sky less blue (0.062 vs 0.081). Only the user's own request kept on top: blue-violet mountains, shade_cool re-banded for DJI's darker levels (mountains 0.33-0.46, fields/brush <0.28, lake reflection >0.48): mountains h 267-299 at 1-30 s, lake reflection -1/-10/-4% at 23/27/30 s, brush unchanged.",
+  "input_lut": "dji_flip_dlogm_to_rec709.cube",
   "curve": [
     [
       0,
       0
     ],
     [
-      0.02,
-      0.017
-    ],
-    [
-      0.05,
-      0.045
-    ],
-    [
-      0.15,
-      0.163
-    ],
-    [
-      0.3,
-      0.35
-    ],
-    [
-      0.45,
-      0.5
-    ],
-    [
-      0.6,
-      0.645
-    ],
-    [
-      0.75,
-      0.775
-    ],
-    [
-      0.88,
-      0.87
-    ],
-    [
       1,
-      0.97
+      1
     ]
   ],
   "shadows_ab": [
@@ -54,34 +20,18 @@
     0
   ],
   "hue_shifts": [],
-  "vibrance": 0.5,
-  "saturation": 1.3,
+  "chroma_gains": [],
+  "vibrance": 0.0,
+  "saturation": 1.0,
+  "contrast_chroma": 0.0,
   "protect_skin": false,
-  "denoise": false,
   "sharpen": 0.3,
-  "chroma_gains": [
-    [
-      38,
-      25,
-      0.92
-    ],
-    [
-      72,
-      25,
-      1.15
-    ],
-    [
-      240,
-      40,
-      1.15
-    ]
-  ],
   "shade_cool": {
     "lightness": [
-      0.3,
-      0.38,
-      0.48,
-      0.55
+      0.28,
+      0.33,
+      0.45,
+      0.49
     ],
     "warm": [
       310,

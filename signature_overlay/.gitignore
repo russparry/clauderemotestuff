@@ -12,3 +12,4 @@ __pycache__/
 graded/*
 !graded/.gitkeep
 review/
+luts/*.cube
