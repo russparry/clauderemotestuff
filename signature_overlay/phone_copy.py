@@ -40,7 +40,7 @@ def main():
         stats = str(Path(tmp) / "x265.log")
         base = [FF, "-hide_banner", "-loglevel", "error", "-stats", "-y", "-i", a.src,
                 "-c:v", "libx265", "-preset", "fast", "-b:v", f"{kbps}k", "-maxrate", f"{kbps * 2}k",
-                "-bufsize", f"{kbps * 3}k", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"]
+                "-bufsize", f"{kbps * 3}k", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"]   # 10-bit, like the masters
         params = "log-level=error:colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited"
         tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
         print("pass 1 of 2")

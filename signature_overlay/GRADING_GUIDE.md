@@ -122,7 +122,9 @@ story), which took eleven rounds to get right. Read this before grading anything
 
 ## Delivering
 
-- Send the full render in the app (160-220 MB for 26 s) and a before/after crop of what changed.
+- Send the full render in the app and a before/after crop of what changed. Masters are 10-bit HEVC
+  since Nov 12 2026 (CRF 12, `-tune grain`, ~170 Mbps on detailed 4K60 drone footage: about the
+  size of the camera's own file); the earlier 8-bit H.264 ones were 160-220 MB for 26 s.
   The app refuses files over 400 MiB (a 45 s 4K60 render is about 420 MiB): send the phone copy
   instead.
 - Phone copy for the GitHub app: `python3 phone_copy.py <render> <videos checkout>/<name>.mp4`

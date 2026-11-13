@@ -49,4 +49,7 @@ Read before working:
   horizontal clips: ask once, fill the frame, `--fit` (the Nov 10 drone clip: signature shrunk to
   the picture and centered, black bars) or `--keep-frame` (the Nov 12 sunset clip: stays 3840x2160,
   no bars, same signature rule). No Instagram copies. No `--ink-shadow` unless asked.
+- Always go by the numbers (user, Nov 12 2026): decide with measurements (detail, error against the
+  ideal grade, color, grain, size), not by eyeballing downscaled stills; show the numbers.
+- Masters keep 10-bit color, whatever the source ("keep the 10 bit color regardless").
 - Do only what was asked; ask at most one question, only when the request can't be done as stated.

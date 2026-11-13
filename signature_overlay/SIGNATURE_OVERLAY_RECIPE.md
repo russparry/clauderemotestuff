@@ -120,7 +120,7 @@ One file per render, in `4k\`:
 |---|---|---|
 | Frame | 2160×3840, the same frame the user exported | Same |
 | Frame rate | Same as the source (e.g. 59.94) | Same |
-| Video | H.264 High 5.2, CRF 17, 8-bit 4:2:0, BT.709 video range | 10-bit HEVC (x265), CRF 16, HLG or PQ as exported, Dolby Vision kept |
+| Video | 10-bit HEVC (x265 Main 10, `-tune grain`, CRF 12, `hvc1`), 4:2:0, BT.709 video range. Until Nov 12 2026 it was 8-bit H.264 CRF 17, which kept about two thirds of the fine detail on 4K60 drone footage ("doesn't look as sharp"); see `MASTER_ENC` for the measurements | 10-bit HEVC (x265), CRF 16, HLG or PQ as exported, Dolby Vision kept |
 | Audio | `--keep-audio`: copied untouched, stops at the cut. Otherwise the clip's stereo track at 192k AAC, faded with the picture and silent during the black hold. | Same |
 | Container | MP4 with faststart, rotation tag removed | Same |
 
@@ -231,9 +231,10 @@ Drone and phone cameras re-expose on their own, and a moving camera's scene chan
    - **Hue:** small rotations per hue band. Near-grays are left alone, because their hue is just noise.
    - **Split tone:** cool shadows and warm highlights, as small OKLab a/b offsets.
    - **Gamut:** a color that doesn't fit Rec.709 loses chroma at the same lightness and hue until it fits. Channels are never clipped.
-5. **Sharpening:** `cas=strength=0.4` in RGB, then an explicit conversion to 16-bit YUV and `unsharp=13:13:0.3`.
-6. **Back to 8-bit with error-diffusion dithering:** prevents banding in sky gradients.
-7. **Vignette (angle 0.4):** subtle edge darkening toward the center and the signature.
+5. **Sharpening:** `cas=strength=0.4` in RGB (scaled by the look's `sharpen`).
+6. **Vignette (angle 0.4):** subtle edge darkening toward the center and the signature (edges x0.78, corners x0.72). Done as a 16-bit RGB multiply with the same cos^4 falloff as ffmpeg's `vignette` filter, which is 8-bit only and would cut the picture to 8 bits.
+7. **YUV:** explicit conversion to 16-bit YUV, then `unsharp=13:13:0.3` (scaled the same way).
+8. **Down to 10-bit with error-diffusion dithering** (8-bit until Nov 12 2026). Measured on the sunset clip's sky: the 8-bit dither alone made smooth sky 2-3.6x as noisy as the ideal grade; at 10 bits it's within 0.06 of it.
 
 ### Example looks from past projects (`looks\examples\`, not defaults)
 
