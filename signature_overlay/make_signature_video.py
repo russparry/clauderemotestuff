@@ -4,7 +4,8 @@ scene fades to black, then holds on black for 2 s.
 
 Folders (all inside this script's folder):
   before\\   videos waiting to be edited (drop clips here)
-  4k\\       <name>_4k.mp4     2160x3840 at the clip's own frame rate (the only output)
+  4k\\       <name>_4k.mp4     2160x3840 at the clip's own frame rate (the only output;
+                              --keep-frame keeps the clip's own frame, e.g. 3840x2160)
   looks\\    <name>.json       a video's own color look, used when that video is graded
   signature_white_transparent_2x_1.mov  the signature (used automatically)
 
@@ -537,9 +538,10 @@ def qc_report(path, t_end, box, samples=10):
     ]
 
 
-def ink_contrast(path, t, k, box=INK_BOX):
-    """Contrast of white ink against the picture right under it, just before the pen starts."""
-    w, h = even(OUT_W * k), even(OUT_H * k)
+def ink_contrast(path, t, k, box=INK_BOX, size=(OUT_W, OUT_H)):
+    """Contrast of white ink against the picture right under it, just before the pen starts.
+    `size` is the finished frame in full-size pixels (box is in the same pixels)."""
+    w, h = even(size[0] * k), even(size[1] * k)
     f = ff_frame(path, t, "", w, h, pix="yuv420p")
     if f is None:
         return None
@@ -570,6 +572,11 @@ def render(bg, sig, a):
     k = 0.25 if a.preview else 1.0
     info = probe(bg)
     only = a.grade_only
+    keep = a.keep_frame and not only
+    if keep and a.fit:
+        sys.exit("--keep-frame already shows the whole picture in its own frame; leave out --fit.")
+    # The finished frame in full-size pixels: the vertical 4K master, or the clip's own frame.
+    FW, FH = (info["w"], info["h"]) if keep else (OUT_W, OUT_H)
     if only:
         # Grade only: the clip's own frame (landscape stays landscape, 4K stays 4K), no signature,
         # no fade, sound copied as is.
@@ -580,9 +587,10 @@ def render(bg, sig, a):
         master = (PREVIEW_DIR / f"{bg.stem}{tag}_graded_preview.mp4" if a.preview
                   else GRADED / f"{bg.stem}{tag}_graded.mp4")
     else:
-        W, H = even(OUT_W * k), even(OUT_H * k)
+        W, H = even(FW * k), even(FH * k)
         tag = (("_reversed" if a.reverse else "") + ("_original" if a.no_grade else "")
-               + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else ""))
+               + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else "")
+               + (("_horizontal" if FW > FH else "_ownframe") if keep else ""))
         if a.preview:
             master = PREVIEW_DIR / f"{bg.stem}{tag}_preview.mp4"
         else:
@@ -662,6 +670,13 @@ def render(bg, sig, a):
         ih4 = iw4 * (iy1 - iy0) / (ix1 - ix0)
         cx, cy = OUT_W / 2, OUT_H / 2
         box_4k = (round(cx - iw4 / 2), round(cy - ih4 / 2), round(cx + iw4 / 2), round(cy + ih4 / 2))
+    elif keep and not a.ink_box:
+        # The clip's own frame: same rule as --fit (ink 48.9% of the picture's short side, at the
+        # exact center), with the picture filling the frame.
+        iw4 = (INK_BOX[2] - INK_BOX[0]) / OUT_W * min(FW, FH)
+        ih4 = iw4 * (iy1 - iy0) / (ix1 - ix0)
+        cx, cy = FW / 2, FH / 2
+        box_4k = (round(cx - iw4 / 2), round(cy - ih4 / 2), round(cx + iw4 / 2), round(cy + ih4 / 2))
     s = (box_4k[2] - box_4k[0]) * k / (ix1 - ix0)
     sw, sh = even(cw * s), even(ch * s)
     ox, oy = math.floor(box_4k[0] * k - ix0 * s), math.floor(box_4k[1] * k - iy0 * s)
@@ -680,7 +695,7 @@ def render(bg, sig, a):
     to_rgb = TONEMAP if info["hdr"] else "format=gbrp16le"
     # Framing: fill the 9:16 frame (crop what doesn't fit), or with --fit show the whole picture
     # with black bars. Measurements follow the framing, so they see what the viewer sees.
-    if only:
+    if only or keep:
         sample = (f"scale=480:{even(480 * info['h'] / info['w'])}", 480, even(480 * info["h"] / info["w"]))
         pw, ph = W, H
         place, pad = f"scale={W}:{H}:flags=lanczos", ""
@@ -926,7 +941,7 @@ def render(bg, sig, a):
         out_shots = sorted((*window(sa, sb), look) for sa, sb, look in segments)
         for line in shot_table(check, out_shots, total if only else fade_start, qc_box):
             print("  " + line)
-    contrast = None if (hdr_out or rot or only) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k)
+    contrast = None if (hdr_out or rot or only) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k, (FW, FH))
     if contrast is not None:
         verdict = "ok  " if contrast >= MIN_INK_CONTRAST or a.ink_shadow else "WARN"
         print(f"  {verdict} signature contrast {contrast:4.1f}:1 against the picture behind it "
@@ -996,6 +1011,10 @@ def main():
     ap.add_argument("--fit", action="store_true",
                     help="show the whole picture: a horizontal clip sits inside the vertical frame with black "
                          "bars above and below, instead of filling the frame and cropping its sides")
+    ap.add_argument("--keep-frame", action="store_true",
+                    help="keep the clip's own frame instead of the vertical one (a 3840x2160 clip stays "
+                         "3840x2160, no bars); the signature shrinks to the picture and sits at its center, "
+                         "as with --fit. Outputs get _horizontal (or _ownframe) in the name")
     ap.add_argument("--reverse", action="store_true",
                     help="play the footage backward; the signature and fade still play forward at the end")
     ap.add_argument("--look", help="a look in looks\\ (name), an example in looks\\examples\\, or a .json "

@@ -1,0 +1,13 @@
+{
+  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake, mountains in silhouette, dark fields and a neighborhood in front. Featured hues: the golden glow low on the right (hue 80-88, 18-31 s), the pink-orange cloud streaks (~45-58) and the blue sky (~245). The clip's white point is 0.871, so levels stretch the top ~15%; the neutral curve then bleached the glow to white (L 1.0, color 0) and a first try with a soft shoulder still left it pale (L 0.977, color 0.025 vs raw 0.10). So the curve's top end comes down to 0.89 to undo the stretch: glow L 0.916 with color 0.083-0.099, the same gold as raw with its texture. Gold band (85) x1.35, sky x1.2, no extra for reds/oranges at 40 (the lake reflection otherwise went to twice raw color; now 1.5x, in line with the clouds). Log footage, so saturation 1.2 and vibrance 0.4, kept moderate so the sunset doesn't go neon. Dark fields kept dark and clean (no lift). No people, so no skin guard. Sharpening low (dusk shadows are noisy).",
+  "curve": [[0, 0], [0.05, 0.04], [0.15, 0.145], [0.3, 0.315], [0.5, 0.52], [0.7, 0.69], [0.85, 0.8], [0.95, 0.865], [1, 0.89]],
+  "shadows_ab": [-0.002, -0.006],
+  "highlights_ab": [0, 0],
+  "hue_shifts": [],
+  "chroma_gains": [[40, 30, 1.0], [85, 25, 1.35], [245, 35, 1.2]],
+  "vibrance": 0.4,
+  "saturation": 1.2,
+  "protect_skin": false,
+  "denoise": false,
+  "sharpen": 0.3
+}
