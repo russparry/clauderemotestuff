@@ -43,6 +43,9 @@ import numpy as np
 #                  fading out below lightness l1 (default [0.25, 0.5])
 #   sky_deepen     {"amount": 0.07, "hue": 245, "width": 45, "bright": [0.82, 0.97]}: darken
 #                  near-white blue sky a little so it can show more blue (like a polarizer)
+#   dark_tone      {"light": [l0, l1, l2, l3], "chroma": 0.6, "ab": [a, b]}: inside a lightness
+#                  window (fades in l0-l1, out l2-l3) scale color and add an OKLab tint; b < 0 is
+#                  bluer. For dark silhouettes (hazy mountains) that came out too brown
 #   denoise       true = light noise reduction first (for pushed low-light footage)
 #   exposure_offsets, shadow_lift_keys, warm_highlights: see "changes over time" below
 #   protect_skin   false = no skin guard, for footage with no people (golden light on rock or
@@ -305,6 +308,15 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     gain = gain * (1 - skin) + np.minimum(gain, SKIN_MAX_GAIN) * skin
     C2 = C * gain
 
+    # 3b. Dark tones ("dark_tone"): inside a lightness window, scale color and add a tint (step 5b).
+    # For hazy mountains in silhouette that vibrance and saturation pushed brown and orange (Nov 13
+    # 2026 sunset clip). Brightness only (never position), so an object can't come out two-toned.
+    dt = p.get("dark_tone")
+    if dt:
+        l0, l1, l2, l3 = dt.get("light", [0.25, 0.32, 0.50, 0.60])
+        dark_w = _smoothstep(l0, l1, L2) * (1 - _smoothstep(l2, l3, L2))
+        C2 = C2 * (1 + dark_w * (float(dt.get("chroma", 1.0)) - 1))
+
     # 4. Hue. Only colored pixels move (a near-gray's hue is noise), and skin barely moves.
     shift = np.zeros_like(h)
     for center, width, deg in p["hue_shifts"]:
@@ -316,6 +328,9 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
     high_w = np.clip((L2 - 0.4) / 0.6, 0, 1) ** 2
     a2 = C2 * np.cos(np.radians(h2)) + shadow_w * p["shadows_ab"][0] + high_w * p["highlights_ab"][0]
     b2 = C2 * np.sin(np.radians(h2)) + shadow_w * p["shadows_ab"][1] + high_w * p["highlights_ab"][1]
+    if dt:
+        a2 = a2 + dark_w * dt.get("ab", [0, 0])[0]
+        b2 = b2 + dark_w * dt.get("ab", [0, 0])[1]
 
     # 5b. Cool tint: a cooler white balance for grays, snow, shaded rock and sky, while the hue
     # ranges in "keep" (default: warm) keep their own color, so golden light and browns stay
