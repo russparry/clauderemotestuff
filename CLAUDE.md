@@ -32,8 +32,9 @@ Read before working:
 3. Grade with `signature_overlay/grade_tools.py` (analyze, stills, keys, check) and render with
    `make_signature_video.py`; a 26 s 4K60 render with masks takes 15-20 minutes (run it in the
    background). Previews (`--preview`) hide grain: test the darkest seconds at full size.
-4. Deliver: send the render in the app, and push a phone copy to the repo's `videos` branch
-   (`phone_copy.py`: 4K HEVC under 100 MB; public is fine, the user said so for all their videos).
+4. Deliver: send the render in the app (it takes 400 MiB at most; a bigger master goes as
+   `phone_copy.py <master> <out> --target 395`), and push a phone copy to the repo's `videos` branch
+   (`phone_copy.py`: 10-bit 4K HEVC under 100 MB; public is fine, the user said so for all their videos).
    The user downloads from the GitHub app. GitHub releases can't be created from these sessions.
    Keep earlier versions (`4k/versions/`, `graded/versions/`): renders overwrite. Videos aren't
    committed to the code branches.
@@ -44,7 +45,12 @@ Read before working:
 - Natural over processed: golden light golden with its texture visible, never neon or flat orange.
 - Darker and clean beats bright and grainy. Nothing faded or hazy. No sudden changes over time.
   No two-toned trees or objects (no position-based rules that cross an object).
-- Standard color (SDR) output; no HDR surprises. Keep 4K.
+- "Always go by the numbers": measure before and after every change (grade_tools, stills
+  measurements, `check`, full-size crops, encode tests against a `--lossless` reference) and show
+  the user the numbers, not impressions.
+- Standard color (SDR) output; no HDR surprises. Keep 4K. Keep 10-bit color regardless: masters
+  are 10-bit HEVC at CRF 10 (about the drone's own data rate and file size; the old 8-bit H.264
+  master measurably smeared fine texture and the user noticed), phone copies 10-bit HEVC too.
 - Signature videos: ask for the start time if not given ("as late as you can" = `--start latest`);
   horizontal clips: ask once: `--own-frame` (stays horizontal 4K, whole shot, no bars; the lake
   sunset, "whole shot but drop the black bars"), `--fit` (vertical with black bars; the first

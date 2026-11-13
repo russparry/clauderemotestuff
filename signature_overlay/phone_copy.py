@@ -28,10 +28,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("src")
     ap.add_argument("dst")
-    ap.add_argument("--target", type=float, default=90.0, help="target size in MB (default 90; GitHub's limit is 100)")
+    ap.add_argument("--target", type=float, default=90.0,
+                    help="target size in MB (default 90, for GitHub's 100 MB limit; 395 for the app's 400 MiB "
+                         "limit when the master is bigger)")
     a = ap.parse_args()
     secs = duration(a.src)
-    kbps = int(min(40000, a.target * 8000 * 0.95 / secs))       # 5% headroom for the container
+    # 5% headroom for the container; at most 150 Mb/s (4K60 HEVC plays fine on phones at that rate)
+    kbps = int(min(150000, a.target * 8000 * 0.95 / secs))
     print(f"{secs:.2f} s -> {kbps / 1000:.1f} Mbps HEVC, two passes")
     # Two passes: the first measures how much detail every frame has, the second spends the size
     # where it's needed. A single pass starts cautious and leaves the first ~0.5 s visibly soft
@@ -51,8 +54,9 @@ def main():
                        + ["-c:a", "copy", "-movflags", "+faststart", a.dst], check=True)
     size = Path(a.dst).stat().st_size / 1e6
     print(f"{a.dst}: {size:.1f} MB")
-    if size >= 100:
-        sys.exit("Over GitHub's 100 MB limit: run again with a lower --target.")
+    limit = 100 if a.target <= 100 else 419          # GitHub file limit / the app's 400 MiB
+    if size >= limit:
+        sys.exit(f"Over the {limit} MB limit: run again with a lower --target.")
 
 
 if __name__ == "__main__":

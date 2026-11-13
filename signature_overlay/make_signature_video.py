@@ -105,10 +105,16 @@ MIN_INK_CONTRAST = 3.0                 # white ink vs the picture behind it (WCA
 
 COLOR_OUT = ["-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709",
              "-color_trc", "bt709", "-color_range", "tv"]
-MASTER_CRF = 12                        # x265 quality for masters (lower = more detail kept); measured below
+MASTER_CRF = 10                        # x265 quality for masters (lower = more detail kept)
 # Masters are 10-bit HEVC (Main 10), standard color (Rec.709 SDR), like the drone's own files: the
-# user wants 10-bit kept, and 8-bit H.264 at CRF 17 measurably softened fine detail (lake clip,
-# Nov 2026: 59 Mb/s 8-bit H.264 against the drone's 130 Mb/s 10-bit HEVC).
+# user wants 10-bit kept ("keep the 10 bit color regardless") and found the 8-bit H.264 CRF 17
+# master less sharp than the original. Measured on the lake clip (Nov 2026), 3 s against a lossless
+# render of the same grade; detail = fine texture kept in the most textured 20%, match = its
+# correlation with the reference:
+#   8-bit H.264 CRF 17 (the old master)  46 Mb/s  detail 84%  match 0.76
+#   10-bit HEVC 2-pass 21 Mb/s (phone)   21 Mb/s  detail 85%  match 0.84
+#   10-bit HEVC CRF 12 / 10 / 8          81 / 124 / 180 Mb/s  detail 86 / 89 / 92%  match 0.84 / 0.89 / 0.92
+# CRF 10 lands at the drone's own data rate (130 Mb/s), i.e. about the original's file size.
 
 
 def master_enc(crf=MASTER_CRF, lossless=False):
