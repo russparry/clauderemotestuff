@@ -45,6 +45,9 @@ import numpy as np
 #                  code value). For a sun or bright glow: the measured white (99.7th percentile)
 #                  clips the glow to white; set it near the brightest raw value and roll off with
 #                  the curve's top instead
+#   shade_cool     {"lightness": [l0, l1, l2, l3], "warm_color": 0.35, "ab": [a, b], "deepen": 0.035}:
+#                  silhouettes and haze in a brightness band (mountains against a sunset) lose
+#                  warm color, turn cooler and a little deeper; brighter and darker areas untouched
 #   sky_deepen     {"amount": 0.07, "hue": 245, "width": 45, "bright": [0.82, 0.97]}: darken
 #                  near-white blue sky a little so it can show more blue (like a polarizer)
 #   denoise       true = light noise reduction first (for pushed low-light footage)
@@ -317,11 +320,35 @@ def grade(rgb, look, black=0.0, white=1.0, edge=None):
         shift = shift + _band(h, center, width) * deg
     h2 = h + shift * _smoothstep(0.015, 0.05, C) * (1 - 0.8 * skin)
 
+    # 4b. Shade cool: silhouettes and haze in the middle of the brightness range (mountains
+    # against a sunset) lose part of their warm color and turn cooler and a little deeper, while
+    # brighter warm colors (sky glow, reflections) and the darkest areas stay as they are.
+    # Depends on lightness and hue only (never position).
+    sc = p.get("shade_cool")
+    if sc:
+        # Selected by brightness only: the band is chosen so the silhouette is in it and the
+        # foreground (darker) and the glow and reflections (brighter) are not. The tint and
+        # deepening are the same for every pixel in the band; selecting by hue made a field
+        # whose hues straddle the edge blotchy (olive specks on blue-gray) on the lake clip.
+        l0, l1, l2, l3 = sc.get("lightness", [0.30, 0.38, 0.48, 0.55])
+        w_sc = _smoothstep(l0, l1, L2) * (1 - _smoothstep(l2, l3, L2))
+        # Warm color is reduced (blue sky in the band keeps its color), with a wide, gentle edge.
+        ws, we = sc.get("warm", [310, 100])
+        warm = _hue_window(h, _hue(ws), _hue(we), fade=30.0)
+        C2 = C2 * (1 - w_sc * warm * (1 - float(sc.get("warm_color", 0.5))))
+        L2 = L2 - w_sc * float(sc.get("deepen", 0.0))
+    else:
+        w_sc = 0.0
+
     # 5. Split tone.
     shadow_w = np.clip(1 - L2 / 0.6, 0, 1) ** 2
     high_w = np.clip((L2 - 0.4) / 0.6, 0, 1) ** 2
     a2 = C2 * np.cos(np.radians(h2)) + shadow_w * p["shadows_ab"][0] + high_w * p["highlights_ab"][0]
     b2 = C2 * np.sin(np.radians(h2)) + shadow_w * p["shadows_ab"][1] + high_w * p["highlights_ab"][1]
+
+    if sc:
+        a2 = a2 + w_sc * sc["ab"][0]
+        b2 = b2 + w_sc * sc["ab"][1]
 
     # 5b. Cool tint: a cooler white balance for grays, snow, shaded rock and sky, while the hue
     # ranges in "keep" (default: warm) keep their own color, so golden light and browns stay

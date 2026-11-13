@@ -1,5 +1,5 @@
 {
-  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake. Streaky pink/orange clouds, blue sky above, mountains in silhouette, a dark neighborhood and fields in front; the drone turns toward the sun, whose glow grows from 16% to 36% of the picture by 30 s. Own look from its hues (red 30-45, orange 45-60, blue 240-255). The measured white point (0.871, 99.7th percentile) clipped the sun glow to a white blob and halved its color, so levels.white 0.96 (near the brightest raw value) and a curve shoulder that keeps the sun core at its raw brightness (OKLab L ~0.90, where gold h~72 can still hold color 0.08; at 0.93 only 0.057). Gold band 72 x1.15; red-orange 38 eased x0.92 (the lake reflection doubled to color 0.10 and read flat orange); blue 240 x1.15, natural. Log footage: saturation 1.3, vibrance 0.5. No people: no skin guard. Foreground left dark (silhouette at sunset; darker and clean). Camera exposure steady (+0.04 at most): no time keys. Toe eased a touch ([0.02,0.017],[0.05,0.045]): the 4K test had 8% of the picture crushed to black in the fields at 27-31 s; this keeps a hint of them for ~4% more grain.",
+  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake. Streaky pink/orange clouds, blue sky above, mountains in silhouette, a dark neighborhood and fields in front; the drone turns toward the sun, whose glow grows from 16% to 36% of the picture by 30 s. Own look from its hues (red 30-45, orange 45-60, blue 240-255). The measured white point (0.871, 99.7th percentile) clipped the sun glow to a white blob and halved its color, so levels.white 0.96 (near the brightest raw value) and a curve shoulder that keeps the sun core at its raw brightness (OKLab L ~0.90, where gold h~72 can still hold color 0.08; at 0.93 only 0.057). Gold band 72 x1.15; red-orange 38 eased x0.92 (the lake reflection doubled to color 0.10 and read flat orange); blue 240 x1.15, natural. Log footage: saturation 1.3, vibrance 0.5. No people: no skin guard. Foreground left dark (silhouette at sunset; darker and clean). Camera exposure steady (+0.04 at most): no time keys. Toe eased a touch ([0.02,0.017],[0.05,0.045]): the 4K test had 8% of the picture crushed to black in the fields at 27-31 s; this keeps a hint of them for ~4% more grain. v2 (user: 'the most yellow part of the sunset is making the mountains look more brown and washed out... maybe a little more blue hue?'): the grade doubled the haze's reddish-brown on the backlit mountains (color 0.034 -> 0.071, hue 29) and lifted them. shade_cool on the brightness band 0.38-0.48 (mountains 0.39-0.49; fields/brush below 0.34, lake reflection and glow above 0.53): warm color x0.35, tint toward blue-violet, 0.035 deeper -> mountains slate blue-violet (h 273-314). First tries selected by hue too: brush went gray (raw log chroma read as gray), then a field straddling the hue edge went blotchy; selecting by brightness only fixed both. Gold, glow and brush unchanged; lake reflection -10% color at most.",
   "levels": {
     "white": 0.96
   },
@@ -75,5 +75,23 @@
       40,
       1.15
     ]
-  ]
+  ],
+  "shade_cool": {
+    "lightness": [
+      0.3,
+      0.38,
+      0.48,
+      0.55
+    ],
+    "warm": [
+      310,
+      100
+    ],
+    "warm_color": 0.35,
+    "ab": [
+      -0.01,
+      -0.024
+    ],
+    "deepen": 0.035
+  }
 }
