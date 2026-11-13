@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A phone-friendly copy of a finished video that fits under GitHub's 100 MB file limit.
 
-Same 4K frame and frame rate, re-encoded as HEVC (H.265, what iPhones record) in two passes at a
+Same 4K frame and frame rate, re-encoded as 10-bit HEVC (H.265 Main 10, what iPhones record) in two passes at a
 data rate picked from the video's length so the file lands near --target MB (default 90). Used to put
 finished videos on the repo's `videos` branch, where the user downloads them from the GitHub app.
 
@@ -40,7 +40,7 @@ def main():
         stats = str(Path(tmp) / "x265.log")
         base = [FF, "-hide_banner", "-loglevel", "error", "-stats", "-y", "-i", a.src,
                 "-c:v", "libx265", "-preset", "fast", "-b:v", f"{kbps}k", "-maxrate", f"{kbps * 2}k",
-                "-bufsize", f"{kbps * 3}k", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"]
+                "-bufsize", f"{kbps * 3}k", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"]          # 10-bit, like the original
         params = "log-level=error:colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited"
         tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
         print("pass 1 of 2")

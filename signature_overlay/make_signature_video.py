@@ -105,8 +105,19 @@ MIN_INK_CONTRAST = 3.0                 # white ink vs the picture behind it (WCA
 
 COLOR_OUT = ["-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709",
              "-color_trc", "bt709", "-color_range", "tv"]
-MASTER_ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", "17",
-              "-profile:v", "high", "-level", "5.2", *COLOR_OUT, "-c:a", "aac", "-b:a", "192k"]
+MASTER_CRF = 12                        # x265 quality for masters (lower = more detail kept); measured below
+# Masters are 10-bit HEVC (Main 10), standard color (Rec.709 SDR), like the drone's own files: the
+# user wants 10-bit kept, and 8-bit H.264 at CRF 17 measurably softened fine detail (lake clip,
+# Nov 2026: 59 Mb/s 8-bit H.264 against the drone's 130 Mb/s 10-bit HEVC).
+
+
+def master_enc(crf=MASTER_CRF, lossless=False):
+    params = ("log-level=error:colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited"
+              + (":lossless=1" if lossless else ""))
+    return ["-c:v", "libx265", "-preset", "medium", *([] if lossless else ["-crf", f"{crf:g}"]),
+            "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1", "-x265-params", params,
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+            "-c:a", "aac", "-b:a", "192k"]
 PREVIEW_ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", *COLOR_OUT,
                "-c:a", "aac", "-b:a", "128k"]
 
@@ -472,7 +483,7 @@ def ink_layer(sinfo, paper, offset, sw, sh, ink, shadow, k, rotate=0, tags=TAGS,
     color = f"lutyuv=y={ink_y if ink_y is not None else INK_Y[ink]}:u=128:v=128"
     if not shadow:
         # HDR output is 10-bit: convert the layer directly, never through RGB.
-        deep = ",format=yuva420p10le" if "bt2020" in tags else ""
+        deep = ",format=yuva420p10le"             # outputs are 10-bit (HDR and standard color)
         return chain + f"[c1]{color}[cc];[cc][al]alphamerge{deep}[ink]"
     # A soft dark glow under the strokes, so white ink still reads over a bright sky.
     return (chain + "[c1]split[c2][c3];[al]split[al1][al2];"
@@ -834,7 +845,7 @@ def render(bg, sig, a):
     if hdr_out:
         picture = f"format=yuv420p10le,{out_tags}"
     elif a.no_grade:
-        picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p,{TAGS}"
+        picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p10le,{TAGS}"
     else:
         head = to_rgb
         if boost_luts:
@@ -852,7 +863,7 @@ def render(bg, sig, a):
         sharpen_rgb = f"cas=strength={0.4 * sharp:.3f}" if sharp > 0 else "null"
         sharpen_yuv = (f"unsharp=13:13:{0.3 * sharp:.3f}:13:13:{0.3 * sharp:.3f}" if sharp > 0 else "null")
         picture = (f"{graded_rgb},{sharpen_rgb},{to_yuv},format=yuv444p16le,{sharpen_yuv},"
-                   f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
+                   f"zscale=dither=error_diffusion,format=yuv420p10le,{TAGS},{VIGNETTE}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.
     prep = "" if native else f"{place},{picture}{pad},"
@@ -867,8 +878,7 @@ def render(bg, sig, a):
             fc += f"[bg][shadow]overlay={ox}:{oy}:eof_action=repeat[bgs];[bgs]"
         else:
             fc += "[bg]"
-        fc += (f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le" if hdr_out
-               else f"[ink]overlay={ox}:{oy}:eof_action=repeat,format=yuv420p")
+        fc += f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le"
         fc += "[vm]"
     has_audio = bool(info["audio"])
     if has_audio and not keep_audio:
@@ -887,7 +897,7 @@ def render(bg, sig, a):
            "-map", "[vm]",
            *(hdr_enc(hdr_out, "ultrafast" if a.preview else "medium", 24 if a.preview else 16,
                      dovi=info["dovi"] and native) if hdr_out
-             else PREVIEW_ENC if a.preview else MASTER_ENC), *audio_m,
+             else PREVIEW_ENC if a.preview else master_enc(a.crf, a.lossless)), *audio_m,
            "-t", f"{total:.4f}", str(tmp_m)]
 
     print(f"\n=== {bg.name}")
@@ -1007,6 +1017,10 @@ def main():
     ap.add_argument("--signature", default=str(SIGNATURE), help="signature clip (default: the one in this folder)")
     ap.add_argument("--from", dest="trim_from", type=float, help="use the clip only from this second on")
     ap.add_argument("--to", dest="trim_to", type=float, help="use the clip only up to this second")
+    ap.add_argument("--crf", type=float, default=MASTER_CRF,
+                    help=f"master quality, 10-bit HEVC (default {MASTER_CRF}; lower keeps more detail, bigger file)")
+    ap.add_argument("--lossless", action="store_true",
+                    help="lossless 10-bit master (huge; a reference for measuring what encoding loses)")
     ap.add_argument("--own-frame", action="store_true",
                     help="keep the clip's own frame: a horizontal clip makes a horizontal 4K video (whole "
                          "picture, no bars, no cropping); the signature's ink is 48.9%% of the short side, centered")
