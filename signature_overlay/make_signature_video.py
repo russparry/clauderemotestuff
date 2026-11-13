@@ -490,13 +490,16 @@ def ink_layer(sinfo, paper, offset, sw, sh, ink, shadow, k, rotate=0, tags=TAGS,
     if not shadow:
         # HDR output is 10-bit: convert the layer directly, never through RGB.
         deep = ",format=yuva420p10le"             # outputs are 10-bit (HDR and standard color)
-        return chain + f"[c1]{color}[cc];[cc][al]alphamerge{deep}[ink]"
+        # alphamerge takes the alpha plane's full-range tag; retag as video range, or the overlay
+        # converts the whole picture to full range to match (black 64 -> 0 in 10-bit: crushed
+        # blacks, clipped whites; caught by QC on the lake clip, Nov 2026).
+        return chain + f"[c1]{color}[cc];[cc][al]alphamerge,{tags}{deep}[ink]"
     # A soft dark glow under the strokes, so white ink still reads over a bright sky.
     return (chain + "[c1]split[c2][c3];[al]split[al1][al2];"
-            f"[c2]{color}[cc];[cc][al1]alphamerge[ink];"
+            f"[c2]{color}[cc];[cc][al1]alphamerge,{tags}[ink];"
             f"[al2]gblur=sigma={max(1.0, SHADOW_SIGMA * k):.1f},"
             f"lut=c0='clip(val*{SHADOW_GAIN}\\,0\\,255)*{SHADOW_OPACITY}',setparams=range=pc[sa];"
-            "[c3]lutyuv=y=16:u=128:v=128[sc];[sc][sa]alphamerge[shadow]")
+            f"[c3]lutyuv=y=16:u=128:v=128[sc];[sc][sa]alphamerge,{tags}[shadow]")
 
 
 def picture_stats(path, times, box):
