@@ -4,7 +4,8 @@ scene fades to black, then holds on black for 2 s.
 
 Folders (all inside this script's folder):
   before\\   videos waiting to be edited (drop clips here)
-  4k\\       <name>_4k.mp4     2160x3840 at the clip's own frame rate (the only output)
+  4k\\       <name>_4k.mp4     2160x3840 at the clip's own frame rate (the only output;
+                              --keep-frame keeps the clip's own frame, e.g. 3840x2160)
   looks\\    <name>.json       a video's own color look, used when that video is graded
   signature_white_transparent_2x_1.mov  the signature (used automatically)
 
@@ -92,8 +93,8 @@ LEGACY_LOOKS = {
 DENOISE = "hqdn3d=4:3:6:5"   # for looks with "denoise": pushed low light shows mottled noise in the sky
 # Sharpening: cas works on RGB; unsharp needs YUV, so the chain converts in between.
 SHARPEN_RGB, SHARPEN_YUV = "cas=strength=0.4", "unsharp=13:13:0.3:13:13:0.3"
-VIGNETTE = "vignette=angle=0.4"
-TAGS = "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"
+VIGNETTE_ANGLE = 0.4                   # ffmpeg vignette's cos^4 falloff: edges x0.78, corners x0.72
+TAGS ="setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"
 INK_Y = {"white": 235, "black": 16}
 # --keep-hdr: HDR stays HDR (10-bit HEVC). White ink sits at HDR reference white (8-bit
 # video-range code: 75% HLG signal, or 203 nits PQ), which matches SDR white, not peak.
@@ -105,8 +106,19 @@ MIN_INK_CONTRAST = 3.0                 # white ink vs the picture behind it (WCA
 
 COLOR_OUT = ["-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709",
              "-color_trc", "bt709", "-color_range", "tv"]
-MASTER_ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", "17",
-              "-profile:v", "high", "-level", "5.2", *COLOR_OUT, "-c:a", "aac", "-b:a", "192k"]
+# Masters are 10-bit HEVC, like the DJI and iPhone originals: standard color (Rec.709, SDR), only
+# deeper. Nov 12 2026: 8-bit H.264 at CRF 17 kept about two thirds of the grade's fine detail on
+# 4K60 drone footage ("doesn't look as sharp") and cut the 10-bit gradients to 8-bit; the user:
+# "keep the 10 bit color regardless". Chosen by measurement on 3 s of the 4K60 sunset drone clip,
+# against an uncompressed 10-bit render: x265 defaults kept 57% of the fine detail (its SAO and
+# deblocking smooth texture); -tune grain at CRF 14 / 12 / 10 kept 90 / 95 / 93% with errors of
+# 1.3 / 1.0 / 0.8 levels at 134 / 173 / 221 Mbps. CRF 12 is the first under 1 level. About 50x
+# slower than real time at 4K60 (a 31 s clip takes ~25 minutes).
+MASTER_ENC = ["-c:v", "libx265", "-preset", "medium", "-crf", "12", "-tune", "grain",
+              "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
+              "-x265-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited",
+              "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+              "-c:a", "aac", "-b:a", "192k"]
 PREVIEW_ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", *COLOR_OUT,
                "-c:a", "aac", "-b:a", "128k"]
 
@@ -444,6 +456,15 @@ def even(v):
     return int(round(v / 2.0)) * 2
 
 
+def vignette_mask(w, h, label):
+    """ffmpeg's vignette (cos^4 falloff at VIGNETTE_ANGLE, centered) as a 16-bit RGB gain image,
+    built once and repeated, so the darkening keeps full precision; ffmpeg's vignette filter is
+    8-bit only and would cut a 10-bit picture to 8 bits."""
+    e = f"65535*pow(cos({VIGNETTE_ANGLE}*hypot(X-W/2\\,Y-H/2)/hypot(W/2\\,H/2))\\,4)"
+    return (f"color=c=white:s={w}x{h}:r=1:d=1,format=gbrp16le,geq=r='{e}':g='{e}':b='{e}',"
+            f"loop=loop=-1:size=1[{label}]")
+
+
 def strip_rotation(tmp, out, ff=None):
     # iPhone clips carry a -90 degree rotation tag that ffmpeg copies even though the
     # pixels are already upright; strip it or players show the video sideways.
@@ -537,9 +558,10 @@ def qc_report(path, t_end, box, samples=10):
     ]
 
 
-def ink_contrast(path, t, k, box=INK_BOX):
-    """Contrast of white ink against the picture right under it, just before the pen starts."""
-    w, h = even(OUT_W * k), even(OUT_H * k)
+def ink_contrast(path, t, k, box=INK_BOX, size=(OUT_W, OUT_H)):
+    """Contrast of white ink against the picture right under it, just before the pen starts.
+    `size` is the finished frame in full-size pixels (box is in the same pixels)."""
+    w, h = even(size[0] * k), even(size[1] * k)
     f = ff_frame(path, t, "", w, h, pix="yuv420p")
     if f is None:
         return None
@@ -570,6 +592,11 @@ def render(bg, sig, a):
     k = 0.25 if a.preview else 1.0
     info = probe(bg)
     only = a.grade_only
+    keep = a.keep_frame and not only
+    if keep and a.fit:
+        sys.exit("--keep-frame already shows the whole picture in its own frame; leave out --fit.")
+    # The finished frame in full-size pixels: the vertical 4K master, or the clip's own frame.
+    FW, FH = (info["w"], info["h"]) if keep else (OUT_W, OUT_H)
     if only:
         # Grade only: the clip's own frame (landscape stays landscape, 4K stays 4K), no signature,
         # no fade, sound copied as is.
@@ -580,9 +607,10 @@ def render(bg, sig, a):
         master = (PREVIEW_DIR / f"{bg.stem}{tag}_graded_preview.mp4" if a.preview
                   else GRADED / f"{bg.stem}{tag}_graded.mp4")
     else:
-        W, H = even(OUT_W * k), even(OUT_H * k)
+        W, H = even(FW * k), even(FH * k)
         tag = (("_reversed" if a.reverse else "") + ("_original" if a.no_grade else "")
-               + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else ""))
+               + ("_shadow" if a.ink_shadow else "") + ("_letterbox" if a.fit else "")
+               + (("_horizontal" if FW > FH else "_ownframe") if keep else ""))
         if a.preview:
             master = PREVIEW_DIR / f"{bg.stem}{tag}_preview.mp4"
         else:
@@ -662,6 +690,13 @@ def render(bg, sig, a):
         ih4 = iw4 * (iy1 - iy0) / (ix1 - ix0)
         cx, cy = OUT_W / 2, OUT_H / 2
         box_4k = (round(cx - iw4 / 2), round(cy - ih4 / 2), round(cx + iw4 / 2), round(cy + ih4 / 2))
+    elif keep and not a.ink_box:
+        # The clip's own frame: same rule as --fit (ink 48.9% of the picture's short side, at the
+        # exact center), with the picture filling the frame.
+        iw4 = (INK_BOX[2] - INK_BOX[0]) / OUT_W * min(FW, FH)
+        ih4 = iw4 * (iy1 - iy0) / (ix1 - ix0)
+        cx, cy = FW / 2, FH / 2
+        box_4k = (round(cx - iw4 / 2), round(cy - ih4 / 2), round(cx + iw4 / 2), round(cy + ih4 / 2))
     s = (box_4k[2] - box_4k[0]) * k / (ix1 - ix0)
     sw, sh = even(cw * s), even(ch * s)
     ox, oy = math.floor(box_4k[0] * k - ix0 * s), math.floor(box_4k[1] * k - iy0 * s)
@@ -680,7 +715,7 @@ def render(bg, sig, a):
     to_rgb = TONEMAP if info["hdr"] else "format=gbrp16le"
     # Framing: fill the 9:16 frame (crop what doesn't fit), or with --fit show the whole picture
     # with black bars. Measurements follow the framing, so they see what the viewer sees.
-    if only:
+    if only or keep:
         sample = (f"scale=480:{even(480 * info['h'] / info['w'])}", 480, even(480 * info["h"] / info["w"]))
         pw, ph = W, H
         place, pad = f"scale={W}:{H}:flags=lanczos", ""
@@ -820,7 +855,7 @@ def render(bg, sig, a):
     if hdr_out:
         picture = f"format=yuv420p10le,{out_tags}"
     elif a.no_grade:
-        picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p,{TAGS}"
+        picture = f"{to_rgb},{to_yuv}:dither=error_diffusion,format=yuv420p10le,{TAGS}"
     else:
         head = to_rgb
         if boost_luts:
@@ -837,8 +872,11 @@ def render(bg, sig, a):
         sharp = float(look_sharpen) if look_sharpen is not None else 1.0
         sharpen_rgb = f"cas=strength={0.4 * sharp:.3f}" if sharp > 0 else "null"
         sharpen_yuv = (f"unsharp=13:13:{0.3 * sharp:.3f}:13:13:{0.3 * sharp:.3f}" if sharp > 0 else "null")
-        picture = (f"{graded_rgb},{sharpen_rgb},{to_yuv},format=yuv444p16le,{sharpen_yuv},"
-                   f"zscale=dither=error_diffusion,format=yuv420p,{TAGS},{VIGNETTE}")
+        # The vignette multiplies the 16-bit RGB picture (same falloff as ffmpeg's 8-bit vignette
+        # filter), and the picture leaves the chain as 10-bit.
+        picture = (f"{graded_rgb},{sharpen_rgb}[vin];{vignette_mask(pw, ph, 'vmask')};"
+                   f"[vin][vmask]blend=all_mode=multiply:shortest=1,{to_yuv},format=yuv444p16le,{sharpen_yuv},"
+                   f"zscale=dither=error_diffusion,format=yuv420p10le,{TAGS}")
     # Untouched HDR frames go straight to the fade: no scaling, format change or retagging,
     # which would also strip the per-frame Dolby Vision data.
     prep = "" if native else f"{place},{picture}{pad},"
@@ -853,8 +891,7 @@ def render(bg, sig, a):
             fc += f"[bg][shadow]overlay={ox}:{oy}:eof_action=repeat[bgs];[bgs]"
         else:
             fc += "[bg]"
-        fc += (f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le" if hdr_out
-               else f"[ink]overlay={ox}:{oy}:eof_action=repeat,format=yuv420p")
+        fc += f"[ink]overlay={ox}:{oy}:eof_action=repeat:format=yuv420p10,format=yuv420p10le"
         fc += "[vm]"
     has_audio = bool(info["audio"])
     if has_audio and not keep_audio:
@@ -926,7 +963,7 @@ def render(bg, sig, a):
         out_shots = sorted((*window(sa, sb), look) for sa, sb, look in segments)
         for line in shot_table(check, out_shots, total if only else fade_start, qc_box):
             print("  " + line)
-    contrast = None if (hdr_out or rot or only) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k)
+    contrast = None if (hdr_out or rot or only) else ink_contrast(check, max(start - 0.1, 0), ck, box_4k, (FW, FH))
     if contrast is not None:
         verdict = "ok  " if contrast >= MIN_INK_CONTRAST or a.ink_shadow else "WARN"
         print(f"  {verdict} signature contrast {contrast:4.1f}:1 against the picture behind it "
@@ -996,6 +1033,10 @@ def main():
     ap.add_argument("--fit", action="store_true",
                     help="show the whole picture: a horizontal clip sits inside the vertical frame with black "
                          "bars above and below, instead of filling the frame and cropping its sides")
+    ap.add_argument("--keep-frame", action="store_true",
+                    help="keep the clip's own frame instead of the vertical one (a 3840x2160 clip stays "
+                         "3840x2160, no bars); the signature shrinks to the picture and sits at its center, "
+                         "as with --fit. Outputs get _horizontal (or _ownframe) in the name")
     ap.add_argument("--reverse", action="store_true",
                     help="play the footage backward; the signature and fade still play forward at the end")
     ap.add_argument("--look", help="a look in looks\\ (name), an example in looks\\examples\\, or a .json "

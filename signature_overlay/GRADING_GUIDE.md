@@ -80,6 +80,7 @@ story), which took eleven rounds to get right. Read this before grading anything
 | `exposure_offsets`, `shadow_lift_keys`, `warm_highlights` | Earlier tools, superseded on the drone clip: they caused the faded browns, the sudden change and the over-orange peak below. Prefer `forest_boost` / `region_grade`. |
 | `denoise` | `true`: light noise reduction on the whole picture first (pushed low light). |
 | `cool_tint` | A cooler white balance (`ab`, e.g. `[-0.003, -0.013]`) for grays, snow, shade and sky, while the hue ranges in `keep` keep their own color (`[[330, 185]]` = warm through green), fading out in the dark (`dark`). For "cooler, but leave the warm colors". Keep greens in `keep`: dim greens have so little color that the tint turns them teal. |
+| `dark_tone` | Inside a lightness window (`light`: fades in l0-l1, out l2-l3) scale color (`chroma`) and add an OKLab tint (`ab`, b < 0 bluer). For dark silhouettes that vibrance and saturation pushed brown: on the Nov 12 sunset clip the hazy mountains by the glow went from color 0.028 to 0.054 and hue 25 (red-brown); `chroma` 0.55, `ab` [0, -0.012] on 0.25-0.60 brought them back to raw color with no yellow (hue 343, dusky mauve) while fields (darker), lake, clouds and glow (brighter) measured identical. Measure the target's lightness first and keep everything else outside the window. |
 | `sky_deepen` | Darkens bright blue sky a little (`amount` 0.07) so it can show more blue, like a polarizer. Needed when the sky is graded near white: there the screen can't show more blue, and a blue chroma gain does nothing. |
 
 ### "Make it pop" / "more vivid" / "bluer blues, greener greens" (dusk clip v2, Nov 2026)
@@ -122,7 +123,9 @@ story), which took eleven rounds to get right. Read this before grading anything
 
 ## Delivering
 
-- Send the full render in the app (160-220 MB for 26 s) and a before/after crop of what changed.
+- Send the full render in the app and a before/after crop of what changed. Masters are 10-bit HEVC
+  since Nov 12 2026 (CRF 12, `-tune grain`, ~170 Mbps on detailed 4K60 drone footage: about the
+  size of the camera's own file); the earlier 8-bit H.264 ones were 160-220 MB for 26 s.
   The app refuses files over 400 MiB (a 45 s 4K60 render is about 420 MiB): send the phone copy
   instead.
 - Phone copy for the GitHub app: `python3 phone_copy.py <render> <videos checkout>/<name>.mp4`

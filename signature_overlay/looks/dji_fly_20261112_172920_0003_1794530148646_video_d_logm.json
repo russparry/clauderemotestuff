@@ -1,0 +1,18 @@
+{
+  "notes": "DJI D-Log M drone clip, Nov 12 2026 17:29: sunset over a lake, mountains in silhouette, dark fields and a neighborhood in front. Featured hues: the golden glow low on the right (hue 80-88, 18-31 s), the pink-orange cloud streaks (~45-58) and the blue sky (~245). The clip's white point is 0.871, so levels stretch the top ~15%; the neutral curve then bleached the glow to white (L 1.0, color 0) and a first try with a soft shoulder still left it pale (L 0.977, color 0.025 vs raw 0.10). So the curve's top end comes down to 0.89 to undo the stretch: glow L 0.916 with color 0.083-0.099, the same gold as raw with its texture. Gold band (85) x1.35, sky x1.2, no extra for reds/oranges at 40 (the lake reflection otherwise went to twice raw color; now 1.5x, in line with the clouds). Log footage, so saturation 1.2 and vibrance 0.4, kept moderate so the sunset doesn't go neon. Dark fields kept dark and clean (no lift). No people, so no skin guard. Sharpening low (dusk shadows are noisy). Nov 13 revision (user: the yellowest part of the sunset makes the mountains 'more brown and orangey than i think they should be... maybe a little more blue hue'): measured on the mountains beside the glow, vibrance and saturation had doubled their color (0.028 -> 0.054 at 30 s) and their yellow component (b +0.011 -> +0.022), hue 25 (red-brown). dark_tone on lightness 0.25-0.60 (mountains sit at 0.35-0.41; fields 0.13-0.18, lake 0.7, clouds 0.8+, glow 0.92 are outside): color x0.55 and b -0.012, so at 30 s color 0.027 (raw level), b 0.000, hue 343 (dusky mauve); 24 s hue 339, 18 s hue 317. Fields unchanged. A subtler try (x0.7, b -0.006) left them red-brown (hue 16); a bluer one (b -0.018, a -0.003) went blue-violet (hue 300 at 18 s).",
+  "curve": [[0, 0], [0.05, 0.04], [0.15, 0.145], [0.3, 0.315], [0.5, 0.52], [0.7, 0.69], [0.85, 0.8], [0.95, 0.865], [1, 0.89]],
+  "shadows_ab": [-0.002, -0.006],
+  "highlights_ab": [0, 0],
+  "hue_shifts": [],
+  "chroma_gains": [[40, 30, 1.0], [85, 25, 1.35], [245, 35, 1.2]],
+  "vibrance": 0.4,
+  "saturation": 1.2,
+  "protect_skin": false,
+  "denoise": false,
+  "sharpen": 0.3,
+  "dark_tone": {
+    "light": [0.25, 0.32, 0.50, 0.60],
+    "chroma": 0.55,
+    "ab": [0, -0.012]
+  }
+}
